@@ -6,6 +6,7 @@
 package org.LatencyUtils;
 
 import org.HdrHistogram.Histogram;
+import org.HdrHistogram.AtomicHistogram;
 
 import java.lang.ref.WeakReference;
 import java.util.Timer;
@@ -29,11 +30,11 @@ public class LatencyStats {
 
     final PauseDetector pauseDetector;
 
-    Histogram currentRecordingHistogram;
+    AtomicHistogram currentRecordingHistogram;
 
     Histogram currentPauseCorrectionHistogram;
 
-    Histogram[] intervalRecordingHistograms;
+    AtomicHistogram[] intervalRecordingHistograms;
     Histogram[] intervalPauseCorrectingHistograms;
     volatile int latestIntervalHistogramIndex = 0;
 
@@ -45,6 +46,7 @@ public class LatencyStats {
 
     static final Timer latencyStatsTasksTimer = new Timer();
     final PeriodicHistogramUpdateTask updateTask;
+    final PauseTracker pauseTracker;
 
     long previousRecordingTime;
     final IntervalEstimator intervalEstimator;
@@ -87,10 +89,10 @@ public class LatencyStats {
         this.intervalEstimatorWindowLength = intervalEstimatorWindowLength;
 
         // Create alternating recording histograms:
-        currentRecordingHistogram = new Histogram(highestTrackableLatency, numberOfSignificantValueDigits);
-        intervalRecordingHistograms = new Histogram[numberOfRecentHistogramIntervalsToTrack];
+        currentRecordingHistogram = new AtomicHistogram(highestTrackableLatency, numberOfSignificantValueDigits);
+        intervalRecordingHistograms = new AtomicHistogram[numberOfRecentHistogramIntervalsToTrack];
         for (int i = 0; i < numberOfRecentHistogramIntervalsToTrack; i++) {
-            intervalRecordingHistograms[i] = new Histogram(highestTrackableLatency, numberOfSignificantValueDigits);
+            intervalRecordingHistograms[i] = new AtomicHistogram(highestTrackableLatency, numberOfSignificantValueDigits);
         }
 
         // Create alternating pause correction histograms:
@@ -110,7 +112,7 @@ public class LatencyStats {
         updateTask = new PeriodicHistogramUpdateTask(histogramIntervalLengthNsec, this);
 
         // Create PauseTracker and register with pauseDetector:
-        new PauseTracker(pauseDetector, this);
+        pauseTracker = new PauseTracker(pauseDetector, this);
     }
 
     public void recordLatency(long latency) {
@@ -137,8 +139,8 @@ public class LatencyStats {
     }
 
     public synchronized Histogram getIntervalHistogram() {
-        Histogram intervalHistogram = intervalRecordingHistograms[latestIntervalHistogramIndex].copy();
-        intervalHistogram.add(intervalPauseCorrectingHistograms[latestIntervalHistogramIndex]);
+        Histogram intervalHistogram = new Histogram(highestTrackableLatency, numberOfSignificantValueDigits);
+        getIntervalHistogramInto(intervalHistogram);
         return intervalHistogram;
     }
 
@@ -153,7 +155,9 @@ public class LatencyStats {
     }
 
     public synchronized Histogram getUncorrectedIntervalHistogram() {
-        return intervalRecordingHistograms[latestIntervalHistogramIndex].copy();
+        Histogram intervalHistogram = new Histogram(highestTrackableLatency, numberOfSignificantValueDigits);
+        intervalRecordingHistograms[latestIntervalHistogramIndex].copyInto(intervalHistogram);
+        return intervalHistogram;
     }
 
     synchronized void recordDetectedPause(long pauseLengthNsec, long pauseEndTimeNsec) {
@@ -173,7 +177,7 @@ public class LatencyStats {
     }
 
     void swapRecordingHistograms(int indexToSwap) {
-        final Histogram tempHistogram = intervalRecordingHistograms[indexToSwap];
+        final AtomicHistogram tempHistogram = intervalRecordingHistograms[indexToSwap];
         intervalRecordingHistograms[indexToSwap] = currentRecordingHistogram;
         currentRecordingHistogram = tempHistogram;
     }
@@ -209,6 +213,11 @@ public class LatencyStats {
         accumulatedHistogram.add(intervalPauseCorrectingHistograms[latestIntervalHistogramIndex]);
     }
 
+    public void stop() {
+        updateTask.stop();
+        pauseTracker.stop();
+    }
+
     /**
      * PauseTracker is used to feed pause correction histograms whenever a pause is reported:
      */
@@ -222,6 +231,11 @@ public class LatencyStats {
             pauseDetector.addListener(this);
         }
 
+
+        public void stop() {
+            pauseDetector.removeListener(this);
+        }
+
         public void handlePauseEvent(final long pauseLengthNsec, final long pauseEndTimeNsec) {
             final LatencyStats latencyStats = this.get();
 
@@ -229,7 +243,7 @@ public class LatencyStats {
                 latencyStats.recordDetectedPause(pauseLengthNsec, pauseEndTimeNsec);
             } else {
                 // Remove listener:
-                pauseDetector.removeListener(this);
+                stop();
             }
         }
     }
@@ -245,6 +259,10 @@ public class LatencyStats {
             latencyStatsTasksTimer.scheduleAtFixedRate(this, 0, (histogramIntervalLengthNsec / 1000000L));
         }
 
+        public void stop() {
+            this.cancel();
+        }
+
         public void run() {
             final LatencyStats latencyStats = latencyStatsRef.get();
             if (latencyStats != null) {
@@ -252,7 +270,6 @@ public class LatencyStats {
             } else {
                 this.cancel();
             }
-
         }
     }
 }

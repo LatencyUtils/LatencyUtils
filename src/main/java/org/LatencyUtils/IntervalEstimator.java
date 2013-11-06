@@ -7,7 +7,7 @@ package org.LatencyUtils;
 
 public abstract class IntervalEstimator {
 
-    abstract public void recordInterval(long interval, long when);
+    abstract public int recordInterval(long interval, long when);
 
     abstract public long getEstimatedInterval(long when);
 

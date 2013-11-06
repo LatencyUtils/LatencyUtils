@@ -34,6 +34,8 @@ public class LatencyStatsTest {
 
         LatencyStats latencyStats = new LatencyStats();
 
+        Histogram sample = latencyStats.getAccumulatedHistogram();
+
         try {
             detectedPauseLength = 0;
 
@@ -84,6 +86,11 @@ public class LatencyStatsTest {
         } catch (InterruptedException ex) {
 
         }
+
+        latencyStats.stop();
+
+        tracker.stop();
+
         pauseDetector.shutdown();
     }
 
@@ -97,6 +104,10 @@ public class LatencyStatsTest {
             pauseDetector.addListener(this);
         }
 
+        public void stop() {
+            pauseDetector.removeListener(this);
+        }
+
         public void handlePauseEvent(final long pauseLengthNsec, final long pauseEndTimeNsec) {
             final LatencyStatsTest test = this.get();
 
@@ -105,7 +116,7 @@ public class LatencyStatsTest {
                 detectedPauseLength = pauseLengthNsec;
             } else {
                 // Remove listener:
-                pauseDetector.removeListener(this);
+                stop();
             }
         }
     }
