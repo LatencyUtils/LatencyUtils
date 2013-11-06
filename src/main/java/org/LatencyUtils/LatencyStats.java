@@ -124,6 +124,10 @@ public class LatencyStats {
         return accumulatedHistogram.copy();
     }
 
+    public synchronized void getAccumulatedHistogramInto(Histogram targetHistogram) {
+        accumulatedHistogram.copyInto(targetHistogram);
+    }
+
     public synchronized void addAccumulatedHistogramTo(Histogram toHistogram) {
         toHistogram.add(accumulatedHistogram);
     }
@@ -136,6 +140,11 @@ public class LatencyStats {
         Histogram intervalHistogram = intervalRecordingHistograms[latestIntervalHistogramIndex].copy();
         intervalHistogram.add(intervalPauseCorrectingHistograms[latestIntervalHistogramIndex]);
         return intervalHistogram;
+    }
+
+    public synchronized void getIntervalHistogramInto(Histogram targetHistogram) {
+        intervalRecordingHistograms[latestIntervalHistogramIndex].copyInto(targetHistogram);
+        targetHistogram.add(intervalPauseCorrectingHistograms[latestIntervalHistogramIndex]);
     }
 
     public synchronized void addIntervalHistogramTo(Histogram toHistogram) {
