@@ -7,6 +7,10 @@ package org.LatencyUtils;
 
 import java.util.concurrent.atomic.AtomicLong;
 
+/**
+ * A Simple PauseDetector that detects pauses using a consensus observation across a configurable number of
+ * detection thread. Detection threads can be set to periodically wakeup or continually spin.
+ */
 public class SimplePauseDetector extends PauseDetector {
     final static long DEFAULT_SleepIntervalNsec = 1000000L; // 1 msec
     final static long DEFAULT_PauseNotificationThresholdNsec = 10000000L; // 10 msec

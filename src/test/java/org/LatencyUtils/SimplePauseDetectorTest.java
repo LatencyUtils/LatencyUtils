@@ -85,7 +85,7 @@ public class SimplePauseDetectorTest {
         pauseDetector.shutdown();
     }
 
-    static class PauseTracker extends WeakReference<SimplePauseDetectorTest> implements PauseDetector.PauseDetectorListener {
+    static class PauseTracker extends WeakReference<SimplePauseDetectorTest> implements PauseDetectorListener {
         final PauseDetector pauseDetector;
 
         PauseTracker(final PauseDetector pauseDetector, final SimplePauseDetectorTest test) {

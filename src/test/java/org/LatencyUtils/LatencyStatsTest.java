@@ -26,7 +26,7 @@ public class LatencyStatsTest {
     @Test
     public void testLatencyStats() throws Exception {
         SimplePauseDetector pauseDetector = new SimplePauseDetector(1000000L /* 1 msec sleep */,
-                10000000L /* 10msec reporting threashold */, 3 /* thread count */);
+                10000000L /* 10 msec reporting threshold */, 3 /* thread count */);
 
         LatencyStats.setDefaultPauseDetector(pauseDetector);
 
@@ -94,7 +94,7 @@ public class LatencyStatsTest {
         pauseDetector.shutdown();
     }
 
-    static class PauseTracker extends WeakReference<LatencyStatsTest> implements PauseDetector.PauseDetectorListener {
+    static class PauseTracker extends WeakReference<LatencyStatsTest> implements PauseDetectorListener {
         final PauseDetector pauseDetector;
 
         PauseTracker(final PauseDetector pauseDetector, final LatencyStatsTest test) {

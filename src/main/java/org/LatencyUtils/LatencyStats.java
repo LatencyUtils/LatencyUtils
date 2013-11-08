@@ -14,10 +14,14 @@ import java.util.TimerTask;
 
 public class LatencyStats {
     static final long DEFAULT_LatencyUnitSizeInNsecs = 1;
-    static final long DEFAULT_HighestTrackableLatency = 3600000000L;
+
+    static final long DEFAULT_HighestTrackableLatency = 3600000000000L;
     static final int DEFAULT_NumberOfSignificantValueDigits = 2;
+
     static final int DEFAULT_IntervalEstimatorWindowLength = 1024;
+
     static final long DEFAULT_HistogramIntervalLengthNsec = 1000000000L;
+
     static final int DEFAULT_numberOfRecentHistogramIntervalsToTrack = 1;
 
     final long highestTrackableLatency;
@@ -161,11 +165,9 @@ public class LatencyStats {
     }
 
     synchronized void recordDetectedPause(long pauseLengthNsec, long pauseEndTimeNsec) {
-        if (intervalEstimator.getCount() > intervalEstimatorWindowLength) {
-            long estimatedInterval =  intervalEstimator.getEstimatedInterval(pauseEndTimeNsec - pauseLengthNsec);
-            if (pauseLengthNsec > estimatedInterval) {
-                currentPauseCorrectionHistogram.recordValueWithExpectedInterval(pauseLengthNsec, estimatedInterval);
-            }
+        long estimatedInterval =  intervalEstimator.getEstimatedInterval(pauseEndTimeNsec - pauseLengthNsec);
+        if (pauseLengthNsec > estimatedInterval) {
+            currentPauseCorrectionHistogram.recordValueWithExpectedInterval(pauseLengthNsec, estimatedInterval);
         }
     }
 
@@ -221,7 +223,7 @@ public class LatencyStats {
     /**
      * PauseTracker is used to feed pause correction histograms whenever a pause is reported:
      */
-    static class PauseTracker extends WeakReference<LatencyStats> implements PauseDetector.PauseDetectorListener {
+    static class PauseTracker extends WeakReference<LatencyStats> implements PauseDetectorListener {
         final PauseDetector pauseDetector;
 
         PauseTracker(final PauseDetector pauseDetector, final LatencyStats latencyStats) {

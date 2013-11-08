@@ -7,6 +7,18 @@ package org.LatencyUtils;
 
 import java.lang.ref.WeakReference;
 
+/**
+ * A moving average interval estimator with a cap on the time window length that the moving window must completely
+ * fit in in order to provide average estimated. Estimates intervals by averaging the interval values recorded in a
+ * moving window, but if any of the results in the moving window occur outside of the capped time span requested an
+ * impossibly long interval will be provided instead.
+ * <p>
+ * TimeCappedMovingAverageIntervalEstimator can react to pauses reported by an optional PauseDetector by temporarily
+ * expanding the time cap to include each pause length, until such a time that the original time cap no longer overlaps
+ * with the pause. It will also subtract the pause length form intervals measured across a detected pause.
+ *
+ */
+
 public class TimeCappedMovingAverageIntervalEstimator extends MovingAverageIntervalEstimator {
     final long reportingTimes[];
     final long baseTimeCap;
@@ -14,30 +26,66 @@ public class TimeCappedMovingAverageIntervalEstimator extends MovingAverageInter
     long timeCap;
 
     static final int maxPausesToTrack = 32;
+    volatile long latestPauseStartTime = 0;
+    volatile long latestPauseLength = 0;
     long[] pauseStartTimes = new long[maxPausesToTrack];
     long[] pauseLengths = new long[maxPausesToTrack];
     int earliestPauseIndex = 0;
     int nextPauseRecordingIndex = 0;
 
-    public TimeCappedMovingAverageIntervalEstimator(final int windowLength, final long timeCap, final PauseDetector pauseDetector) {
-        super(windowLength);
+    /**
+     *
+     * @param requestedWindowLength The requested length of the moving window. May be rounded up to nearest
+     *                              power of 2.
+     * @param timeCap The cap on time span length in which all window results must fit in order for average
+     *                estimate to be provided
+     */
+    public TimeCappedMovingAverageIntervalEstimator(final int requestedWindowLength, final long timeCap) {
+        this(requestedWindowLength, timeCap, null);
+    }
+
+    /**
+     *
+     * @param requestedWindowLength The requested length of the moving window. May be rounded up to nearest
+     *                              power of 2.
+     * @param timeCap The cap on time span length in which all window results must fit in order for average
+     *                estimate to be provided
+     * @param pauseDetector The PauseDetector to use to track pauses
+     */
+    public TimeCappedMovingAverageIntervalEstimator(final int requestedWindowLength, final long timeCap, final PauseDetector pauseDetector) {
+        super(requestedWindowLength);
         reportingTimes = new long[windowLength];
         this.baseTimeCap = timeCap;
         this.timeCap = baseTimeCap;
-        this.pauseTracker = new PauseTracker(pauseDetector, this);
+        if (pauseDetector != null) {
+            this.pauseTracker = new PauseTracker(pauseDetector, this);
+        } else {
+            pauseTracker = null;
+        }
         for (int i = 0; i < maxPausesToTrack; i++) {
             pauseStartTimes[i] = Long.MAX_VALUE;
             pauseLengths[i] = 0;
         }
     }
 
-    public int recordInterval(long interval, long when) {
-        int position = super.recordInterval(interval, when);
+    /**
+     * @inheritDoc
+     */
+    @Override
+    public void recordInterval(long interval, long when) {
+        if (when - interval < latestPauseStartTime) {
+            // interval includes latest pause, reduce it by pause length:
+            interval -= latestPauseLength;
+        }
+        int position = super.recordIntervalAndReturnWindowPosition(interval, when);
         reportingTimes[position] = when;
-        return position;
     }
 
-    public synchronized long getEstimatedInterval(long when) {
+    /**
+     * @inheritDoc
+     */
+    @Override
+    public synchronized long getEstimatedInterval(final long when) {
         long timeCapStartTime = when - timeCap;
 
         // Skip over and get rid of any pause records whose time has passed:
@@ -56,13 +104,17 @@ public class TimeCappedMovingAverageIntervalEstimator extends MovingAverageInter
 
         if (when - timeCap > reportingTimes[getCurrentPosition()]) {
             // Earliest recorded position is not in the timeCap window. Window not up to date
-            // enough, and we can't use it's estimated interval. Estimate as equal to the timeCap instead.
-            return timeCap;
+            // enough, and we can't use it's estimated interval. Estimate as impossibly big number.
+            return Long.MAX_VALUE;
         }
+
         return super.getEstimatedInterval(when);
     }
 
-    synchronized void recordPause(long pauseLengthNsec, long pauseEndTimeNsec) {
+    synchronized void recordPause(final long pauseLengthNsec, final long pauseEndTimeNsec) {
+        latestPauseLength = pauseLengthNsec;
+        latestPauseStartTime = pauseEndTimeNsec - pauseLengthNsec;
+
         if (pauseStartTimes[nextPauseRecordingIndex] != Long.MAX_VALUE) {
             // We are overwriting a live pause record, account for it:
             timeCap -= pauseLengths[nextPauseRecordingIndex];
@@ -80,15 +132,20 @@ public class TimeCappedMovingAverageIntervalEstimator extends MovingAverageInter
         nextPauseRecordingIndex = (nextPauseRecordingIndex + 1) % maxPausesToTrack;
     }
 
+    /**
+     * Stop the tracking via the pauseDetector, and remove this estimator from the pause detector's listeners.
+     */
     public void stop() {
-        pauseTracker.stop();
+        if (pauseTracker != null) {
+            pauseTracker.stop();
+        }
     }
 
 
     /**
      * PauseTracker is used to feed pause correction histograms whenever a pause is reported:
      */
-    static class PauseTracker extends WeakReference<TimeCappedMovingAverageIntervalEstimator> implements PauseDetector.PauseDetectorListener {
+    static class PauseTracker extends WeakReference<TimeCappedMovingAverageIntervalEstimator> implements PauseDetectorListener {
         final PauseDetector pauseDetector;
 
         PauseTracker(final PauseDetector pauseDetector, final TimeCappedMovingAverageIntervalEstimator estimator) {
