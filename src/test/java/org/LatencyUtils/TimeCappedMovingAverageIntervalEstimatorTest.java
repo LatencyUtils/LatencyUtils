@@ -17,9 +17,12 @@ import java.lang.ref.WeakReference;
 public class TimeCappedMovingAverageIntervalEstimatorTest {
 
     @Test
-    public void testTimeCappedMovingAverageIntervalEstimator() throws Exception {
-        MyArtificalPauseDetector pauseDetector = new MyArtificalPauseDetector();
+    public void testWindowBehavior() throws Exception {
+        MyArtificialPauseDetector pauseDetector = new MyArtificialPauseDetector();
         TimeCappedMovingAverageIntervalEstimator estimator = new TimeCappedMovingAverageIntervalEstimator(32, 1000000000L /* 1 sec */, pauseDetector);
+        // Listeners are added as a concurrent operation, so wait a bit to let the listener register before we
+        // start notifying of pauses:
+        java.util.concurrent.locks.LockSupport.parkNanos(20000000L);
 
         long now = 0;
 
@@ -107,9 +110,40 @@ public class TimeCappedMovingAverageIntervalEstimatorTest {
 
     }
 
-    class MyArtificalPauseDetector extends PauseDetector {
+    volatile long origListenerSize;
+    @Test
+    public void testRecodingWithPauseOverlap() throws Exception {
+        MyArtificialPauseDetector pauseDetector = new MyArtificialPauseDetector();
+        TimeCappedMovingAverageIntervalEstimator estimator = new TimeCappedMovingAverageIntervalEstimator(32, 100000000000L /* 100 sec */, pauseDetector);
+        // Listeners are added as a concurrent operation, so wait a bit to let the listener register before we
+        // start notifying of pauses:
+        java.util.concurrent.locks.LockSupport.parkNanos(20000000L);
+
+        Assert.assertEquals("expected interval to be MAX_VALUE", Long.MAX_VALUE, estimator.getEstimatedInterval(0));
+
+
+        pauseDetector.recordPause(1500000000L, 2500000000L); // 1.5 sec pause that starts at 1 sec.
+
+        for (int i = 0; i < 32; i++) {
+            estimator.recordInterval(2500000000L, 3000000000L); // A 2.5 sec interval that ends at 3 seconds (started at 0.5 sec);
+        }
+
+        // Should have recorded a 1 second interval, not a 2.5 second one:
+        Assert.assertEquals("expected interval to be 1000000000L", 1000000000L, estimator.getEstimatedInterval(3000000000L));
+
+        for (int i = 0; i < 32; i++) {
+            estimator.recordInterval(2500000000L, 6000000000L); // A 2.5 sec interval that ends at 6 seconds (started at 3.5 sec);
+        }
+        Assert.assertEquals("expected interval to be 2500000000L", 2500000000L, estimator.getEstimatedInterval(6000000000L));
+    }
+
+
+
+    class MyArtificialPauseDetector extends PauseDetector {
+        public volatile long latestPauseEndTime = 0;
         public void recordPause(long length, long when) {
             notifyListeners(length, when);
+            latestPauseEndTime = when;
         }
     }
 }

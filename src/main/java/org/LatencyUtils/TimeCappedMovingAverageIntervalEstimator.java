@@ -6,6 +6,7 @@
 package org.LatencyUtils;
 
 import java.lang.ref.WeakReference;
+import java.util.concurrent.atomic.AtomicLongArray;
 
 /**
  * A moving average interval estimator with a cap on the time window length that the moving window must completely
@@ -38,9 +39,8 @@ public class TimeCappedMovingAverageIntervalEstimator extends MovingAverageInter
 
     static final int maxPausesToTrack = 16;
     volatile long latestPauseStartTime = 0;
-    volatile long latestPauseLength = 0;
-    long[] pauseStartTimes = new long[maxPausesToTrack];
-    long[] pauseLengths = new long[maxPausesToTrack];
+    AtomicLongArray pauseStartTimes = new AtomicLongArray(maxPausesToTrack);
+    AtomicLongArray pauseLengths = new AtomicLongArray(maxPausesToTrack);
     int earliestPauseIndex = 0;
     int nextPauseRecordingIndex = 0;
 
@@ -74,8 +74,8 @@ public class TimeCappedMovingAverageIntervalEstimator extends MovingAverageInter
             pauseTracker = null;
         }
         for (int i = 0; i < maxPausesToTrack; i++) {
-            pauseStartTimes[i] = Long.MAX_VALUE;
-            pauseLengths[i] = 0;
+            pauseStartTimes.set(i, Long.MAX_VALUE);
+            pauseLengths.set(i, 0);
         }
     }
 
@@ -85,21 +85,25 @@ public class TimeCappedMovingAverageIntervalEstimator extends MovingAverageInter
     @Override
     public void recordInterval(long interval, long when) {
         long intervalStartTime = when - interval;
+
+        // If interval overlaps with any pauses, we'll need to subtract the overlapping pause times:
         if (intervalStartTime < latestPauseStartTime) {
-            // interval overlaps with pauses. Need to subtract overlapping pause times:
             int pauseIndex = earliestPauseIndex;
             int lastPauseIndex = (earliestPauseIndex + maxPausesToTrack - 1) % maxPausesToTrack;
+            long pauseStartTimeAtIndex = pauseStartTimes.get(pauseIndex);
             long overlappingPauseLengths = 0;
             while ( (pauseIndex != lastPauseIndex) &&
-                    (pauseStartTimes[pauseIndex] != Long.MAX_VALUE) &&
-                    (intervalStartTime < pauseStartTimes[pauseIndex])
+                    (pauseStartTimeAtIndex != Long.MAX_VALUE) &&
+                    (intervalStartTime < pauseStartTimeAtIndex)
                     ) {
-                overlappingPauseLengths += pauseLengths[pauseIndex];
+                overlappingPauseLengths += pauseLengths.get(pauseIndex);
                 pauseIndex = (pauseIndex + 1) % maxPausesToTrack;
+                pauseStartTimeAtIndex = pauseStartTimes.get(pauseIndex);
             }
             // reduce interval by overlapping pause lengths:
             interval -= overlappingPauseLengths;
         }
+
         int position = super.recordIntervalAndReturnWindowPosition(interval, when);
         reportingTimes[position] = when;
     }
@@ -112,15 +116,15 @@ public class TimeCappedMovingAverageIntervalEstimator extends MovingAverageInter
         long timeCapStartTime = when - timeCap;
 
         // Skip over and get rid of any pause records whose time has passed:
-        while (pauseStartTimes[earliestPauseIndex] < timeCapStartTime) {
+        while (pauseStartTimes.get(earliestPauseIndex) < timeCapStartTime) {
             // We just got past the start of this pause.
 
             // Reduce timeCap to skip over pause:
-            timeCap -= pauseLengths[earliestPauseIndex];
+            timeCap -= pauseLengths.get(earliestPauseIndex);
 
             // Erase pause record:
-            pauseStartTimes[earliestPauseIndex] = Long.MAX_VALUE;
-            pauseLengths[earliestPauseIndex] = 0;
+            pauseStartTimes.set(earliestPauseIndex, Long.MAX_VALUE);
+            pauseLengths.set(earliestPauseIndex, 0);
 
             earliestPauseIndex = (earliestPauseIndex + 1) % maxPausesToTrack;
         }
@@ -135,12 +139,11 @@ public class TimeCappedMovingAverageIntervalEstimator extends MovingAverageInter
     }
 
     synchronized void recordPause(final long pauseLength, final long pauseEndTime) {
-        latestPauseLength = pauseLength;
         latestPauseStartTime = pauseEndTime - pauseLength;
 
-        if (pauseStartTimes[nextPauseRecordingIndex] != Long.MAX_VALUE) {
+        if (pauseStartTimes.get(nextPauseRecordingIndex) != Long.MAX_VALUE) {
             // We are overwriting a live pause record, account for it:
-            timeCap -= pauseLengths[nextPauseRecordingIndex];
+            timeCap -= pauseLengths.get(nextPauseRecordingIndex);
             earliestPauseIndex = (nextPauseRecordingIndex + 1) % maxPausesToTrack;
         }
 
@@ -148,8 +151,8 @@ public class TimeCappedMovingAverageIntervalEstimator extends MovingAverageInter
         timeCap += pauseLength;
 
         // Track the pause so we can reduce the timeCap when it gets past the pause endTime:
-        pauseStartTimes[nextPauseRecordingIndex] = pauseEndTime - pauseLength;
-        pauseLengths[nextPauseRecordingIndex] = pauseLength;
+        pauseStartTimes.set(nextPauseRecordingIndex, (pauseEndTime - pauseLength));
+        pauseLengths.set(nextPauseRecordingIndex, pauseLength);
 
         // Increment nextPauseRecordingIndex:
         nextPauseRecordingIndex = (nextPauseRecordingIndex + 1) % maxPausesToTrack;
