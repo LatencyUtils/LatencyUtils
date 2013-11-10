@@ -10,15 +10,19 @@ import java.util.concurrent.atomic.AtomicLong;
 /**
  * A Simple PauseDetector that detects pauses using a consensus observation across a configurable number of
  * detection thread. Detection threads can be set to periodically wakeup or continually spin.
+ * <p>
+ * All times and time units are in nanoseconds
  */
 public class SimplePauseDetector extends PauseDetector {
-    final static long DEFAULT_SleepIntervalNsec = 1000000L; // 1 msec
-    final static long DEFAULT_PauseNotificationThresholdNsec = 10000000L; // 10 msec
+    // All times and time units are in nanoseconds
+
+    final static long DEFAULT_SleepInterval = 1000000L; // 1 msec
+    final static long DEFAULT_PauseNotificationThreshold = 1000000L; // 1 msec
     final static int DEFAULT_NumberOfDetectorThreads = 3;
     final static boolean DEFAULT_Verbose = false;
 
-    final long sleepIntervalNsec;
-    final long pauseNotificationThresholdNsec;
+    final long sleepInterval;
+    final long pauseNotificationThreshold;
     final int numberOfDetectorThreads;
     final boolean verbose;
     final AtomicLong consensusLatestTime = new AtomicLong();
@@ -28,15 +32,28 @@ public class SimplePauseDetector extends PauseDetector {
 
     SimplePauseDetectorThread detectors[];
 
-    public SimplePauseDetector(long sleepIntervalNsec, long pauseNotificationThresholdNsec,
+    /**
+     * Creates a SimplePauseDetector
+     * @param sleepInterval sleep interval used by detector threads
+     * @param pauseNotificationThreshold minimum threshold for reporting detected pauses
+     * @param numberOfDetectorThreads number of consensus detector threads to use
+     */
+    public SimplePauseDetector(long sleepInterval, long pauseNotificationThreshold,
                                int numberOfDetectorThreads) {
-        this(sleepIntervalNsec, pauseNotificationThresholdNsec, numberOfDetectorThreads, false);
+        this(sleepInterval, pauseNotificationThreshold, numberOfDetectorThreads, false);
     }
 
-    public SimplePauseDetector(long sleepIntervalNsec, long pauseNotificationThresholdNsec,
+    /**
+     * Creates a SimplePauseDetector
+     * @param sleepInterval sleep interval used by detector threads
+     * @param pauseNotificationThreshold minimum threshold for reporting detected pauses
+     * @param numberOfDetectorThreads number of consensus detector threads to use
+     * @param verbose provide verbose output when pauses are detected
+     */
+    public SimplePauseDetector(long sleepInterval, long pauseNotificationThreshold,
                                int numberOfDetectorThreads, boolean verbose) {
-        this.sleepIntervalNsec = sleepIntervalNsec;
-        this.pauseNotificationThresholdNsec = pauseNotificationThresholdNsec;
+        this.sleepInterval = sleepInterval;
+        this.pauseNotificationThreshold = pauseNotificationThreshold;
         this.numberOfDetectorThreads = numberOfDetectorThreads;
         this.verbose = verbose;
         detectors = new SimplePauseDetectorThread[numberOfDetectorThreads];
@@ -46,15 +63,23 @@ public class SimplePauseDetector extends PauseDetector {
         }
     }
 
+    /**
+     * Creates a SimplePauseDetector with a default sleep interval (1 msec), a default pause notification threshold
+     * (1 msec), and using the default number of consensus detection threads (3).
+     */
     public SimplePauseDetector() {
-        this(DEFAULT_SleepIntervalNsec, DEFAULT_PauseNotificationThresholdNsec,
+        this(DEFAULT_SleepInterval, DEFAULT_PauseNotificationThreshold,
                 DEFAULT_NumberOfDetectorThreads, DEFAULT_Verbose);
     }
 
+    /**
+     * Shut down the pause detector operation and terminate it's threads.
+     */
     @Override
     public void shutdown() {
         stopThreadMask = 0xffffffffffffffffL;
         super.shutdown();
+        java.util.concurrent.locks.LockSupport.parkNanos(10 * sleepInterval);
     }
 
     class SimplePauseDetectorThread extends Thread {
@@ -73,46 +98,47 @@ public class SimplePauseDetector extends PauseDetector {
         }
 
         public void run() {
-            final long sleepIntervalMsec = (sleepIntervalNsec + (1000000L - 1)) / 1000000L; // round up to msec.
             observedLasUpdateTime = consensusLatestTime.get();
             long now = System.nanoTime();
             long prevNow = now;
             consensusLatestTime.compareAndSet(observedLasUpdateTime, now);
 
             long shortestObservedTimeAroundLoop = Long.MAX_VALUE;
-            try {
-                while ((stopThreadMask & threadMask) == 0) {
-                    if (sleepIntervalNsec != 0) {
-                        Thread.sleep(sleepIntervalMsec);
-                    }
-
-                    // TEST FUNCIONALITY: Spin as long as we are asked to stall:
-                    while ((stallTheadMask & threadMask) != 0);
-
-                    observedLasUpdateTime = consensusLatestTime.get();
-                    // Volatile store above makes sure new now is measured after observedLasUpdateTime sample
-                    now = System.nanoTime();
-                    // Move consensus forward and act on delta:
-                    if (consensusLatestTime.compareAndSet(observedLasUpdateTime, now)) {
-                        final long deltaTimeNs = now - observedLasUpdateTime;
-
-                        final long timeAroundLoop = now - prevNow;
-                        if (timeAroundLoop < shortestObservedTimeAroundLoop) {
-                            shortestObservedTimeAroundLoop = timeAroundLoop;
-                        }
-
-                        long hiccupTimeNsec = deltaTimeNs - shortestObservedTimeAroundLoop;
-                        hiccupTimeNsec = (hiccupTimeNsec < 0) ? 0 : hiccupTimeNsec;
-
-                        if (hiccupTimeNsec > pauseNotificationThresholdNsec) {
-                            System.out.println("thread " + threadNumber + ": sending pause notification message.");
-                            messages.add(new PauseNotification(hiccupTimeNsec, now));
-                        }
-                    }
-                    prevNow = now;
+            while ((stopThreadMask & threadMask) == 0) {
+                if (sleepInterval != 0) {
+                    java.util.concurrent.locks.LockSupport.parkNanos(sleepInterval);
                 }
-            } catch (InterruptedException e) {
-                if (verbose) System.err.println("SimplePauseDetectorThread interrupted/terminating...");
+
+                // TEST FUNCTIONALITY: Spin as long as we are asked to stall:
+                while ((stallTheadMask & threadMask) != 0);
+
+                observedLasUpdateTime = consensusLatestTime.get();
+                // Volatile store above makes sure new now is measured after observedLasUpdateTime sample
+                now = System.nanoTime();
+                // Move consensus forward and act on delta:
+                if (consensusLatestTime.compareAndSet(observedLasUpdateTime, now)) {
+                    final long deltaTimeNs = now - observedLasUpdateTime;
+
+                    final long timeAroundLoop = now - prevNow;
+                    if (timeAroundLoop < shortestObservedTimeAroundLoop) {
+                        shortestObservedTimeAroundLoop = timeAroundLoop;
+                    }
+
+                    long hiccupTime = deltaTimeNs - shortestObservedTimeAroundLoop;
+                    hiccupTime = (hiccupTime < 0) ? 0 : hiccupTime;
+
+                    if (hiccupTime > pauseNotificationThreshold) {
+                        if (verbose) {
+                            System.out.println("SimplePauseDetector thread " + threadNumber +
+                                    ": sending pause notification message: pause of " + hiccupTime +
+                                    " nsec detected at nanoTime: " + now +
+                                    " (sleepInterval = " + sleepInterval +
+                                    " , shortest time around loop = " + shortestObservedTimeAroundLoop + ")");
+                        }
+                        messages.add(new PauseNotification(hiccupTime, now));
+                    }
+                }
+                prevNow = now;
             }
         }
     }
@@ -122,21 +148,23 @@ public class SimplePauseDetector extends PauseDetector {
      * A test method that allows the caller to artificially stall a requested set of the detector threads for
      * a given amount of time. Used to verify pause detection when consensus occurs, as well as lack of detection
      * when it does not.
-     * @param threadNumberMask
-     * @param stallLengthNsec
+     * @param threadNumberMask a mask designating which threads should be stalled.
+     * @param stallLength stall length, in nanosecond units
      */
-    public void stallDetectorThreads(long threadNumberMask, long stallLengthNsec) {
+    public void stallDetectorThreads(long threadNumberMask, long stallLength) {
         long savedMask = stallTheadMask;
         stallTheadMask = threadNumberMask;
-        try {
-            if (stallLengthNsec > 1000000L) {
-                Thread.sleep(stallLengthNsec / 1000000L);
-            } else {
-                long startTime = System.nanoTime();
-                while (System.nanoTime() < (stallLengthNsec + startTime));
+        long startTime = System.nanoTime();
+        long endTime = startTime + stallLength;
+        long remainingTime = stallLength;
+
+        do {
+            remainingTime = endTime - System.nanoTime();
+            if (remainingTime > 1000000L) {
+                java.util.concurrent.locks.LockSupport.parkNanos(remainingTime);
             }
-        } catch (InterruptedException ex) {
-        }
+        } while (remainingTime > 0);
+
         stallTheadMask = savedMask;
     }
 }

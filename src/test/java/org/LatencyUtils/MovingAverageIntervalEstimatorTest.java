@@ -12,7 +12,7 @@ import java.lang.ref.WeakReference;
 
 
 /**
- * JUnit test for {@link org.LatencyUtils.SimplePauseDetector}
+ * JUnit test for {@link org.LatencyUtils.MovingAverageIntervalEstimatorTest}
  */
 public class MovingAverageIntervalEstimatorTest {
 

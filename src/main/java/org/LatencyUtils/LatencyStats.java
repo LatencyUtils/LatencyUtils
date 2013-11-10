@@ -11,25 +11,26 @@ import org.HdrHistogram.AtomicHistogram;
 import java.lang.ref.WeakReference;
 import java.util.Timer;
 import java.util.TimerTask;
+import java.util.concurrent.atomic.AtomicLongFieldUpdater;
 
 public class LatencyStats {
-    static final long DEFAULT_LatencyUnitSizeInNsecs = 1;
-
+    // All times and time units are in nanoseconds
+    
     static final long DEFAULT_HighestTrackableLatency = 3600000000000L;
     static final int DEFAULT_NumberOfSignificantValueDigits = 2;
 
     static final int DEFAULT_IntervalEstimatorWindowLength = 1024;
 
-    static final long DEFAULT_HistogramIntervalLengthNsec = 1000000000L;
+    static final long DEFAULT_HistogramUpdateInterval = 1000000000L;
 
-    static final int DEFAULT_numberOfRecentHistogramIntervalsToTrack = 1;
+    static final int DEFAULT_numberOfRecentHistogramIntervalsToTrack = 2;
 
     final long highestTrackableLatency;
     final int numberOfSignificantValueDigits;
 
     final int intervalEstimatorWindowLength;
 
-    final long histogramIntervalLengthNsec;
+    final long histogramUpdateInterval;
     final int numberOfRecentHistogramIntervalsToTrack;
 
     final PauseDetector pauseDetector;
@@ -40,13 +41,19 @@ public class LatencyStats {
 
     AtomicHistogram[] intervalRecordingHistograms;
     Histogram[] intervalPauseCorrectingHistograms;
+    long[] intervalSampleTimes;
+
     volatile int latestIntervalHistogramIndex = 0;
 
     Histogram uncorrectedAccumulatedHistogram;
     Histogram accumulatedHistogram;
 
-    volatile long recordingStartEpoch = 0;
-    volatile long recordingEndEpoch = 0;
+    private volatile long recordingStartEpoch = 0;
+    private volatile long recordingEndEpoch = 0;
+    static final AtomicLongFieldUpdater<LatencyStats> recordingStartEpochUpdater =
+            AtomicLongFieldUpdater.newUpdater(LatencyStats.class, "recordingStartEpoch");
+    static final AtomicLongFieldUpdater<LatencyStats> recordingEndEpochUpdater =
+            AtomicLongFieldUpdater.newUpdater(LatencyStats.class, "recordingEndEpoch");
 
     static final Timer latencyStatsTasksTimer = new Timer();
     final PeriodicHistogramUpdateTask updateTask;
@@ -62,17 +69,21 @@ public class LatencyStats {
     }
 
     public LatencyStats() {
-        this(defaultPauseDetector);
+        this(DEFAULT_HistogramUpdateInterval);
     }
 
-    public LatencyStats(PauseDetector pauseDetector) {
+    public LatencyStats(long histogramUpdateInterval) {
+        this(defaultPauseDetector, histogramUpdateInterval);
+    }
+
+    public LatencyStats(PauseDetector pauseDetector, long histogramUpdateInterval) {
         this(DEFAULT_HighestTrackableLatency, DEFAULT_NumberOfSignificantValueDigits,
-                DEFAULT_HistogramIntervalLengthNsec, DEFAULT_numberOfRecentHistogramIntervalsToTrack,
+                histogramUpdateInterval, DEFAULT_numberOfRecentHistogramIntervalsToTrack,
                 DEFAULT_IntervalEstimatorWindowLength, pauseDetector);
     }
 
     public LatencyStats(final long highestTrackableLatency, final int numberOfSignificantValueDigits,
-                        final long histogramIntervalLengthNsec, final int numberOfRecentHistogramIntervalsToTrack,
+                        final long histogramUpdateInterval, final int numberOfRecentHistogramIntervalsToTrack,
                         final int intervalEstimatorWindowLength,
                         final PauseDetector pauseDetector) {
 
@@ -88,7 +99,7 @@ public class LatencyStats {
 
         this.highestTrackableLatency = highestTrackableLatency;
         this.numberOfSignificantValueDigits = numberOfSignificantValueDigits;
-        this.histogramIntervalLengthNsec = histogramIntervalLengthNsec;
+        this.histogramUpdateInterval = histogramUpdateInterval;
         this.numberOfRecentHistogramIntervalsToTrack = numberOfRecentHistogramIntervalsToTrack;
         this.intervalEstimatorWindowLength = intervalEstimatorWindowLength;
 
@@ -109,22 +120,28 @@ public class LatencyStats {
         accumulatedHistogram = new Histogram(highestTrackableLatency, numberOfSignificantValueDigits);
         uncorrectedAccumulatedHistogram = new Histogram(highestTrackableLatency, numberOfSignificantValueDigits);
 
+        intervalSampleTimes = new long[numberOfRecentHistogramIntervalsToTrack];
+
         // Create interval estimator:
         intervalEstimator = new MovingAverageIntervalEstimator(intervalEstimatorWindowLength);
 
         // Create and schedule periodic update task:
-        updateTask = new PeriodicHistogramUpdateTask(histogramIntervalLengthNsec, this);
+        updateTask = new PeriodicHistogramUpdateTask(this.histogramUpdateInterval, this);
 
         // Create PauseTracker and register with pauseDetector:
         pauseTracker = new PauseTracker(pauseDetector, this);
     }
 
     public void recordLatency(long latency) {
-        recordingStartEpoch++; // Used to support otherwise un-synchronized histogram swapping
+        recordingStartEpochUpdater.incrementAndGet(this); // Used for otherwise un-synchronized histogram swapping
         trackRecordingInterval();
         currentRecordingHistogram.recordValue(latency);
-        recordingEndEpoch++;
+        recordingEndEpochUpdater.incrementAndGet(this);
+
     }
+
+
+    // Accumulated Histogram access:
 
     public synchronized Histogram getAccumulatedHistogram() {
         return accumulatedHistogram.copy();
@@ -142,6 +159,9 @@ public class LatencyStats {
         return uncorrectedAccumulatedHistogram.copy();
     }
 
+
+    // Interval Histogram access:
+
     public synchronized Histogram getIntervalHistogram() {
         Histogram intervalHistogram = new Histogram(highestTrackableLatency, numberOfSignificantValueDigits);
         getIntervalHistogramInto(intervalHistogram);
@@ -149,25 +169,32 @@ public class LatencyStats {
     }
 
     public synchronized void getIntervalHistogramInto(Histogram targetHistogram) {
-        intervalRecordingHistograms[latestIntervalHistogramIndex].copyInto(targetHistogram);
-        targetHistogram.add(intervalPauseCorrectingHistograms[latestIntervalHistogramIndex]);
+        int index = latestIntervalHistogramIndex;
+        intervalRecordingHistograms[index].copyInto(targetHistogram);
+        targetHistogram.add(intervalPauseCorrectingHistograms[index]);
     }
 
     public synchronized void addIntervalHistogramTo(Histogram toHistogram) {
-        toHistogram.add(intervalRecordingHistograms[latestIntervalHistogramIndex]);
-        toHistogram.add(intervalPauseCorrectingHistograms[latestIntervalHistogramIndex]);
+        int index = latestIntervalHistogramIndex;
+        toHistogram.add(intervalRecordingHistograms[index]);
+        toHistogram.add(intervalPauseCorrectingHistograms[index]);
     }
 
     public synchronized Histogram getUncorrectedIntervalHistogram() {
+        int index = latestIntervalHistogramIndex;
         Histogram intervalHistogram = new Histogram(highestTrackableLatency, numberOfSignificantValueDigits);
-        intervalRecordingHistograms[latestIntervalHistogramIndex].copyInto(intervalHistogram);
+        intervalRecordingHistograms[index].copyInto(intervalHistogram);
         return intervalHistogram;
     }
 
-    synchronized void recordDetectedPause(long pauseLengthNsec, long pauseEndTimeNsec) {
-        long estimatedInterval =  intervalEstimator.getEstimatedInterval(pauseEndTimeNsec - pauseLengthNsec);
-        if (pauseLengthNsec > estimatedInterval) {
-            currentPauseCorrectionHistogram.recordValueWithExpectedInterval(pauseLengthNsec, estimatedInterval);
+    public synchronized void forceIntervalUpdate() {
+        updateHistograms();
+    }
+
+    synchronized void recordDetectedPause(long pauseLength, long pauseEndTime) {
+        long estimatedInterval =  intervalEstimator.getEstimatedInterval(pauseEndTime - pauseLength);
+        if (pauseLength > estimatedInterval) {
+            currentPauseCorrectionHistogram.recordValueWithExpectedInterval(pauseLength, estimatedInterval);
         }
     }
 
@@ -202,13 +229,14 @@ public class LatencyStats {
         intervalPauseCorrectingHistograms[indexToSwap].reset();
 
         swapHistograms(indexToSwap);
+        intervalSampleTimes[indexToSwap] = System.nanoTime();
 
         // Update the latest interval histogram index.
         latestIntervalHistogramIndex = indexToSwap;
 
         // Make sure we are not in the middle of recording a value on the previously current recording histogram:
-        long startEpoch = recordingStartEpoch;
-        while (recordingEndEpoch < startEpoch);
+        long startEpoch = recordingStartEpochUpdater.get(this);
+        while (recordingEndEpochUpdater.get(this) < startEpoch);
 
         uncorrectedAccumulatedHistogram.add(intervalRecordingHistograms[latestIntervalHistogramIndex]);
         accumulatedHistogram.add(intervalRecordingHistograms[latestIntervalHistogramIndex]);
@@ -233,16 +261,15 @@ public class LatencyStats {
             pauseDetector.addListener(this);
         }
 
-
         public void stop() {
             pauseDetector.removeListener(this);
         }
 
-        public void handlePauseEvent(final long pauseLengthNsec, final long pauseEndTimeNsec) {
+        public void handlePauseEvent(final long pauseLength, final long pauseEndTime) {
             final LatencyStats latencyStats = this.get();
 
             if (latencyStats != null) {
-                latencyStats.recordDetectedPause(pauseLengthNsec, pauseEndTimeNsec);
+                latencyStats.recordDetectedPause(pauseLength, pauseEndTime);
             } else {
                 // Remove listener:
                 stop();
@@ -256,9 +283,11 @@ public class LatencyStats {
     static class PeriodicHistogramUpdateTask extends TimerTask {
         final WeakReference<LatencyStats> latencyStatsRef;
 
-        PeriodicHistogramUpdateTask(final long histogramIntervalLengthNsec, final LatencyStats latencyStats) {
+        PeriodicHistogramUpdateTask(final long histogramUpdateInterval, final LatencyStats latencyStats) {
             this.latencyStatsRef = new WeakReference<LatencyStats>(latencyStats);
-            latencyStatsTasksTimer.scheduleAtFixedRate(this, 0, (histogramIntervalLengthNsec / 1000000L));
+            if (histogramUpdateInterval != 0) {
+                latencyStatsTasksTimer.scheduleAtFixedRate(this, 0, (histogramUpdateInterval / 1000000L));
+            }
         }
 
         public void stop() {
