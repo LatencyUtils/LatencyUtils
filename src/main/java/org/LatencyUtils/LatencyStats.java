@@ -123,7 +123,7 @@ public class LatencyStats {
         intervalSampleTimes = new long[numberOfRecentHistogramIntervalsToTrack];
 
         // Create interval estimator:
-        intervalEstimator = new MovingAverageIntervalEstimator(intervalEstimatorWindowLength);
+        intervalEstimator = new TimeCappedMovingAverageIntervalEstimator(intervalEstimatorWindowLength, 5000000000L /* 5 sec */);
 
         // Create and schedule periodic update task:
         updateTask = new PeriodicHistogramUpdateTask(this.histogramUpdateInterval, this);
