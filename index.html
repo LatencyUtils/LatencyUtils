@@ -1,0 +1,89 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="chrome=1">
+    <title>LatencyUtils by giltene</title>
+
+    <link rel="stylesheet" href="stylesheets/styles.css">
+    <link rel="stylesheet" href="stylesheets/pygment_trac.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+    <!--[if lt IE 9]>
+    <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+  </head>
+  <body>
+    <div class="wrapper">
+      <header>
+        <h1>LatencyUtils</h1>
+        <p>A latency stats tracking package</p>
+
+        <p class="view"><a href="https://github.com/LatencyUtils/LatencyUtils">
+            View the Project on GitHub <small>LatencyUtils/LatencyUtils</small></a></p>
+
+
+        <p class="view"><a href="http://LatencyUtils.github.com/LatencyUtils/JavaDoc">
+            View the Project JavaDoc <small>LatencyUtils.github.com/LatencyUtils/JavaDoc</small></a></p>
+        
+        <ul>
+          <li><a href="https://github.com/LatencyUtils/LatencyUtils/zipball/master">Download <strong>ZIP File</strong></a></li>
+          <li><a href="https://github.com/LatencyUtils/LatencyUtils/tarball/master">Download <strong>TAR Ball</strong></a></li>
+          <li><a href="https://github.com/LatencyUtils/LatencyUtils">View On <strong>GitHub</strong></a></li>
+        </ul>
+
+      </header>
+      <section>
+        <h3>LatencyUtils: A latency stats tracking package.</h3>
+
+<p>
+The LatencyUtils package includes useful utilities for tracking latencies. Especially
+in common in-process recording scenarios, which can exhibit significant coordinated
+omission sensitivity without proper handling.
+<p>
+<h3> The problem <h3>
+<p>
+Latency tracking of in-process operations usually consists simple time sampling around
+a tracked operation. E.g. a database read operation for which latency statistics are
+being developed may be surrounded by time measurement operation immediately before and
+after the operation is performed, with the difference in time recorded in some aggregate
+statistics gathering form (average, std. deviation, histogram,. etc.) which is later
+used to report on the experienced latency behavior of the tracked operation.
+<p>
+The problem with this extremely common form of latency behavior tracking is that
+whenever pauses occur in the system, latency statistics become significantly skewed
+toward falsely-optimistic values. This occurs in two key ways:
+<li> When a pause occurs during a tracked operation, a single long recorded latency
+  will appear in the recorded values, with no long latencies associated with any
+  pending requests that may be stalled by the pause.</li>
+<li>When a pause occurs outside of the tracked operation (and outside of the tracked
+  time window) no long latency value would be recorded, even though any requested
+  operation would be stalled by the pause.</li>
+<p>
+<h3> The Solution </h3>
+<p>
+The LatencyStats class is designed for simple, drop-in use as a latency behavior
+recording object in common in-process latency recording and tracking situations.
+LatencyStats includes under-the-hood tracking and correction of pause effects,
+compensating for coordinated omission. It does so by using pluggable pause detectors
+and interval estimators that together with {@link #LatencyStats} will transparently
+produce corrected histogram values for the recorded latency behavior.
+<p>
+<h3>Authors, Contributors, and License</h3>
+
+<p>
+LatencyUtils was authored by Gil Tene (<a href="https://github.com/giltene" class="user-mention">@giltene</a>) and
+    placed in the public domain, as explained at
+<a href="http://creativecommons.org/publicdomain/zero/1.0/">http://creativecommons.org/publicdomain/zero/1.0/</a>
+</p>
+
+<h3>Support or Contact</h3>
+<p>Don't call me, I won't call you.</p>
+
+      </section>
+
+      </footer>
+    </div>
+    <script src="javascripts/scale.fix.js"></script>
+    
+  </body>
+</html>
