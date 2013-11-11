@@ -76,7 +76,13 @@ public class LatencyStats {
 
     static PauseDetector defaultPauseDetector;
 
-    static void setDefaultPauseDetector(PauseDetector pauseDetector) {
+    /**
+     * Set the default pause detector for the LatencyStats class. Used by constructors that do
+     * not explicitly provide a pause detector.
+     *
+     * @param pauseDetector the pause detector to use as a default when no explicit pause detector is provided
+     */
+    static public void setDefaultPauseDetector(PauseDetector pauseDetector) {
         defaultPauseDetector = pauseDetector;
     }
 
