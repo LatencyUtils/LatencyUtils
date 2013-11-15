@@ -6,16 +6,15 @@
 package org.LatencyUtils;
 
 /**
- * IntervalEstimator is used to estimate intervals, potentially based on observed intervals recorded in it.
+ * IntervalEstimator is used to estimate intervalEndTimes, potentially based on observed intervalEndTimes recorded in it.
  */
 public abstract class IntervalEstimator {
 
     /**
      * Record an interval
-     * @param interval the interval to record (in nanoseconds)
      * @param when the end time (in nanoTime units) at which the interval was observed.
      */
-    abstract public void recordInterval(long interval, long when);
+    abstract public void recordInterval(long when);
 
     /**
      * Provides the estimated interval

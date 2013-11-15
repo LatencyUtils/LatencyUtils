@@ -13,31 +13,48 @@ import java.util.concurrent.LinkedBlockingQueue;
  */
 public abstract class PauseDetector extends Thread {
 
-    ArrayList<PauseDetectorListener> listeners = new ArrayList<PauseDetectorListener>();
-    LinkedBlockingQueue<Object> messages = new LinkedBlockingQueue<Object>();
+    ArrayList<PauseDetectorListener> highPriorityListeners = new ArrayList<PauseDetectorListener>(32);
+    ArrayList<PauseDetectorListener> normalPriorityListeners = new ArrayList<PauseDetectorListener>(32);
+
+    private LinkedBlockingQueue<Object> messages = new LinkedBlockingQueue<Object>();
+
     volatile boolean stop = false;
 
     PauseDetector() {
         this.start();
     }
 
-    void notifyListeners(long pauseLengthNsec, long pauseEndTimeNsec) {
-        ArrayList<PauseDetectorListener> listenersCopy =
-                new ArrayList<PauseDetectorListener>(listeners.size());
-        synchronized (this) {
-            listenersCopy.addAll(listeners);
-        }
-        for (PauseDetectorListener listener : listenersCopy) {
-            listener.handlePauseEvent(pauseLengthNsec, pauseEndTimeNsec);
-        }
+    /**
+     * Notify listeners about a pause
+     * @param pauseLengthNsec pause length (in nanoseconds)
+     * @param pauseEndTimeNsec pause end time (in nanoTime)
+     */
+    protected synchronized void notifyListeners(final long pauseLengthNsec, final long pauseEndTimeNsec) {
+        messages.add(new PauseNotification(pauseLengthNsec, pauseEndTimeNsec));
+    }
+
+    /**
+     * Add a {@link org.LatencyUtils.PauseDetectorListener} listener to be notified when pauses are detected.
+     * Listener will be added to the normal priority listeners list.
+     * @param listener Listener to add
+     */
+    public synchronized void addListener(PauseDetectorListener listener) {
+        addListener(listener, false);
     }
 
     /**
      * Add a {@link org.LatencyUtils.PauseDetectorListener} listener to be notified when pauses are detected
+     * Listener will be added to either the normal priority or high priority listeners list,
      * @param listener Listener to add
+     * @param isHighPriority If true, listener will be added to high priority list. If false, listener will
+     *                     be added to low priority list.
      */
-    public synchronized void addListener(PauseDetectorListener listener) {
-        messages.add(new ChangeListenersRequest(ChangeListenersRequest.ChangeCommand.ADD, listener));
+    public synchronized void addListener(PauseDetectorListener listener, boolean isHighPriority) {
+        messages.add(new ChangeListenersRequest(
+                (isHighPriority ?
+                        ChangeListenersRequest.ChangeCommand.ADD_HIGH_PRIORITY :
+                        ChangeListenersRequest.ChangeCommand.ADD_NORMAL_PRIORITY),
+                listener));
     }
 
     /**
@@ -66,16 +83,23 @@ public abstract class PauseDetector extends Thread {
 
                 if (message instanceof ChangeListenersRequest) {
                     final ChangeListenersRequest changeRequest = (ChangeListenersRequest) message;
-                    if (changeRequest.command == ChangeListenersRequest.ChangeCommand.ADD) {
-                        listeners.add(changeRequest.listener);
+                    if (changeRequest.command == ChangeListenersRequest.ChangeCommand.ADD_HIGH_PRIORITY) {
+                        highPriorityListeners.add(changeRequest.listener);
+                    } else if (changeRequest.command == ChangeListenersRequest.ChangeCommand.ADD_NORMAL_PRIORITY) {
+                        normalPriorityListeners.add(changeRequest.listener);
                     } else {
-                        listeners.remove(changeRequest.listener);
+                        normalPriorityListeners.remove(changeRequest.listener);
+                        highPriorityListeners.remove(changeRequest.listener);
                     }
 
                 } else if (message instanceof PauseNotification) {
                     final PauseNotification pauseNotification = (PauseNotification) message;
 
-                    for (PauseDetectorListener listener : listeners) {
+                    for (PauseDetectorListener listener : highPriorityListeners) {
+                        listener.handlePauseEvent(pauseNotification.pauseLengthNsec, pauseNotification.pauseEndTimeNsec);
+                    }
+
+                    for (PauseDetectorListener listener : normalPriorityListeners) {
                         listener.handlePauseEvent(pauseNotification.pauseLengthNsec, pauseNotification.pauseEndTimeNsec);
                     }
                 } else {
@@ -87,12 +111,13 @@ public abstract class PauseDetector extends Thread {
     }
 
     static class ChangeListenersRequest {
-        static enum ChangeCommand {ADD , REMOVE};
+        static enum ChangeCommand {ADD_HIGH_PRIORITY, ADD_NORMAL_PRIORITY, REMOVE};
 
         final ChangeCommand command;
         final PauseDetectorListener listener;
 
-        ChangeListenersRequest(final ChangeCommand changeCommand, final PauseDetectorListener listener) {
+        ChangeListenersRequest(final ChangeCommand changeCommand,
+                               final PauseDetectorListener listener) {
             this.command = changeCommand;
             this.listener = listener;
         }

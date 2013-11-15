@@ -135,7 +135,7 @@ public class SimplePauseDetector extends PauseDetector {
                                     " (sleepInterval = " + sleepInterval +
                                     " , shortest time around loop = " + shortestObservedTimeAroundLoop + ")");
                         }
-                        messages.add(new PauseNotification(hiccupTime, now));
+                        notifyListeners(hiccupTime, now);
                     }
                 }
                 prevNow = now;

@@ -22,7 +22,7 @@ import java.util.concurrent.atomic.AtomicLongFieldUpdater;
  * <p>
  * <h3>Correction Technique</h3>
  * Whenever a pause is detected, appropriate pause correction values are captured in each LatencyStats instance,
- * based on that instance's estimated inter-recording intervals.
+ * based on that instance's estimated inter-recording intervalEndTimes.
  */
 public class LatencyStats {
     // All times and time units are in nanoseconds
@@ -31,7 +31,7 @@ public class LatencyStats {
     static final int DEFAULT_NumberOfSignificantValueDigits = 2;
 
     static final int DEFAULT_IntervalEstimatorWindowLength = 1024;
-    static final long DEFAULT_IntervalEstimatorTimeCap = 5000000000L; /* 5 sec */
+    static final long DEFAULT_IntervalEstimatorTimeCap = 10000000000L; /* 10 sec */
 
     static final long DEFAULT_HistogramUpdateInterval = 1000000000L;
 
@@ -71,7 +71,6 @@ public class LatencyStats {
     final PeriodicHistogramUpdateTask updateTask;
     final PauseTracker pauseTracker;
 
-    long previousRecordingTime;
     final IntervalEstimator intervalEstimator;
 
     static PauseDetector defaultPauseDetector;
@@ -129,7 +128,7 @@ public class LatencyStats {
      * @param highestTrackableLatency   Highest trackable latency in latency histograms
      * @param numberOfSignificantValueDigits Number of significant [decimal] digits of accuracy in latency histograms
      * @param histogramUpdateInterval   The length (in nanoseconds) of the automatically updating time interval.
-     * @param numberOfRecentHistogramIntervalsToTrack Number of recent intervals to track
+     * @param numberOfRecentHistogramIntervalsToTrack Number of recent intervalEndTimes to track
      * @param intervalEstimatorWindowLength Length of window in moving window interval estimator
      * @param intervalEstimatorTimeCap Time cap (in nanoseconds) of window in moving window interval estimator
      * @param pauseDetector The pause detector to use for identifying and correcting for pauses
@@ -282,7 +281,7 @@ public class LatencyStats {
      * Force an update of the interval and accumulated histograms from the current recorded data. A new
      * interval sample will be performed regardless of the timing of histogramUpdateInterval set at construction
      * time. When histogramUpdateInterval is set to 0, {@link #forceIntervalUpdate} provides the only means
-     * by which intervals are updated.
+     * by which intervalEndTimes are updated.
      */
     public synchronized void forceIntervalUpdate() {
         updateHistograms();
@@ -314,9 +313,7 @@ public class LatencyStats {
 
     void trackRecordingInterval() {
         long now = System.nanoTime();
-        long interval = now - previousRecordingTime;
-        intervalEstimator.recordInterval(interval, now);
-        previousRecordingTime = now;
+        intervalEstimator.recordInterval(now);
     }
 
     void swapRecordingHistograms(int indexToSwap) {

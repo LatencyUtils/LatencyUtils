@@ -10,23 +10,23 @@ import java.util.concurrent.atomic.AtomicLongArray;
 
 /**
  * A moving average interval estimator with a cap on the time window length that the moving window must completely
- * fit in in order to provide estimated intervals.
+ * fit in in order to provide estimated intervalEndTimes.
  *
- * A time capped interval estimator is useful for conservatively estimating intervals in environments where rates
+ * A time capped interval estimator is useful for conservatively estimating intervalEndTimes in environments where rates
  * can change dramatically and semi=statically. For example, the rate of market rate updates seen just before market
  * close can be very high, dropping dramatically at market close and staying low thereafter. A non-time-capped
- * moving average estimator will project short estimated intervals long after market close, while a time capped
- * interval estimator will avoid carrying the small intervals beyond the time cap.
+ * moving average estimator will project short estimated intervalEndTimes long after market close, while a time capped
+ * interval estimator will avoid carrying the small intervalEndTimes beyond the time cap.
  *
- * TimeCappedMovingAverageIntervalEstimator Estimates intervals by averaging the interval values recorded in a
- * moving window, but if any of the results in the moving window occur outside of the capped time span requested an
- * impossibly long interval will be provided instead.
+ * TimeCappedMovingAverageIntervalEstimator Estimates intervalEndTimes by averaging the interval values recorded in a
+ * moving window, but if any of the results in the moving window occur outside of the capped time span requested, only
+ * the results that fall within the time cap will be considered.
  * <p>
  * TimeCappedMovingAverageIntervalEstimator can react to pauses reported by an optional PauseDetector by temporarily
  * expanding the time cap to include each pause length, until such a time that the original time cap no longer overlaps
- * with the pause. It will also subtract the pause length form intervals measured across a detected pause. Providing a
+ * with the pause. It will also subtract the pause length form intervalEndTimes measured across a detected pause. Providing a
  * pause detector is highly recommended, as without one the time cap can cause over-conservative interval estimation
- * (i.e. estimated intervals that are much higher than needed) in the presence of pauses.
+ * (i.e. estimated intervalEndTimes that are much higher than needed) in the presence of pauses.
  * <p>
  * All times and time units are in nanoseconds
  */
@@ -83,28 +83,8 @@ public class TimeCappedMovingAverageIntervalEstimator extends MovingAverageInter
      * @inheritDoc
      */
     @Override
-    public void recordInterval(long interval, long when) {
-        long intervalStartTime = when - interval;
-
-        // If interval overlaps with any pauses, we'll need to subtract the overlapping pause times:
-        if (intervalStartTime < latestPauseStartTime) {
-            int pauseIndex = earliestPauseIndex;
-            int lastPauseIndex = (earliestPauseIndex + maxPausesToTrack - 1) % maxPausesToTrack;
-            long pauseStartTimeAtIndex = pauseStartTimes.get(pauseIndex);
-            long overlappingPauseLengths = 0;
-            while ( (pauseIndex != lastPauseIndex) &&
-                    (pauseStartTimeAtIndex != Long.MAX_VALUE) &&
-                    (intervalStartTime < pauseStartTimeAtIndex)
-                    ) {
-                overlappingPauseLengths += pauseLengths.get(pauseIndex);
-                pauseIndex = (pauseIndex + 1) % maxPausesToTrack;
-                pauseStartTimeAtIndex = pauseStartTimes.get(pauseIndex);
-            }
-            // reduce interval by overlapping pause lengths:
-            interval -= overlappingPauseLengths;
-        }
-
-        int position = super.recordIntervalAndReturnWindowPosition(interval, when);
+    public void recordInterval(long when) {
+        int position = super.recordIntervalAndReturnWindowPosition(when);
         reportingTimes[position] = when;
     }
 
@@ -114,28 +94,57 @@ public class TimeCappedMovingAverageIntervalEstimator extends MovingAverageInter
     @Override
     public synchronized long getEstimatedInterval(final long when) {
         long timeCapStartTime = when - timeCap;
+        long earliestPauseStartTime = pauseStartTimes.get(earliestPauseIndex);
 
         // Skip over and get rid of any pause records whose time has passed:
-        while (pauseStartTimes.get(earliestPauseIndex) < timeCapStartTime) {
+        while (earliestPauseStartTime < timeCapStartTime) {
             // We just got past the start of this pause.
 
             // Reduce timeCap to skip over pause:
             timeCap -= pauseLengths.get(earliestPauseIndex);
+            timeCapStartTime = when - timeCap;
 
             // Erase pause record:
             pauseStartTimes.set(earliestPauseIndex, Long.MAX_VALUE);
             pauseLengths.set(earliestPauseIndex, 0);
 
             earliestPauseIndex = (earliestPauseIndex + 1) % maxPausesToTrack;
+            earliestPauseStartTime = pauseStartTimes.get(earliestPauseIndex);
         }
 
-        if (when - timeCap > reportingTimes[getCurrentPosition()]) {
-            // Earliest recorded position is not in the timeCap window. Window not up to date
-            // enough, and we can't use it's estimated interval. Estimate as impossibly big number.
+        int currentPosition = getCurrentPosition();
+
+        int earliestQualifyingWindowPosition = currentPosition;
+        // search for first position that falls within the time cap:
+        int numberOfWindowPositionsSkipped = 0;
+        // TODO: use binary search instead of linear walk:
+        while (intervalEndTimes[earliestQualifyingWindowPosition] < timeCapStartTime) {
+            numberOfWindowPositionsSkipped++;
+            earliestQualifyingWindowPosition = (int) ((earliestQualifyingWindowPosition + 1) & windowMask);
+            if (earliestQualifyingWindowPosition == currentPosition) {
+                break;
+            }
+        }
+        if (numberOfWindowPositionsSkipped >= (windowLength - 1)) {
+            // Nothing in the window falls within the time cap:
             return Long.MAX_VALUE;
         }
 
-        return super.getEstimatedInterval(when);
+        long windowStartTime = intervalEndTimes[earliestQualifyingWindowPosition];
+        if (windowStartTime > earliestPauseStartTime) {
+            windowStartTime = earliestPauseStartTime;
+        }
+        long windowTimeSpan = when - windowStartTime;
+        long totalPauseTimeInWindow = timeCap - baseTimeCap;
+        int positionDelta = windowLength - (numberOfWindowPositionsSkipped + 1);
+
+        long averageInterval = (windowTimeSpan - totalPauseTimeInWindow)  / positionDelta;
+
+        if (averageInterval <= 0) {
+            return Long.MAX_VALUE;
+        }
+
+        return averageInterval;
     }
 
     synchronized void recordPause(final long pauseLength, final long pauseEndTime) {
@@ -177,8 +186,11 @@ public class TimeCappedMovingAverageIntervalEstimator extends MovingAverageInter
         PauseTracker(final PauseDetector pauseDetector, final TimeCappedMovingAverageIntervalEstimator estimator) {
             super(estimator);
             this.pauseDetector = pauseDetector;
-            // Register as listener:
-            pauseDetector.addListener(this);
+            // Register as a high priority listener to make sure pauses are recorded with interval estimator
+            // before they are reported to normal things that may call the estimators. This is intended to
+            // ensure that the most recent pause lengths are correctly taken into account in interval estimates
+            // taken immediately after a pause:
+            pauseDetector.addListener(this, true /* high priority */);
         }
 
         public void stop() {

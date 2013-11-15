@@ -25,23 +25,23 @@ public class MovingAverageIntervalEstimatorTest {
         long now = 0;
 
         for (int i = 0; i < 10000; i++) {
-            now += i * 20;
-            estimator.recordInterval(20, now);
+            now += 20;
+            estimator.recordInterval(now);
         }
 
-        Assert.assertEquals("expected interval to be 20", 20, estimator.getEstimatedInterval(0));
+        Assert.assertEquals("expected interval to be 20", 20, estimator.getEstimatedInterval(now));
 
 
         for (int i = 0; i < 512; i++) {
-            now += i * 40;
-            estimator.recordInterval(40, now);
+            now += 40;
+            estimator.recordInterval(now);
         }
 
         Assert.assertEquals("expected interval to be 20", 30, estimator.getEstimatedInterval(0));
 
         for (int i = 0; i < 256; i++) {
-            now += i * 40;
-            estimator.recordInterval(60, now);
+            now += 60;
+            estimator.recordInterval(now);
         }
 
         Assert.assertEquals("expected interval to be 20", 40, estimator.getEstimatedInterval(0));
