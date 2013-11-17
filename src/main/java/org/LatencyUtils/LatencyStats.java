@@ -90,7 +90,7 @@ public class LatencyStats {
      * use the default pause detector (must be separately set using {@link #setDefaultPauseDetector}), a default
      * histogram update interval (1 sec), a default histogram range and accuracy (highest trackable latency of 1hr,
      * 2 decimal points of accuracy), and a default moving window estimator (1024 entry moving window, time capped at
-     * 5 seconds).
+     * 10 seconds).
      */
     public LatencyStats() {
         this(DEFAULT_HistogramUpdateInterval);
