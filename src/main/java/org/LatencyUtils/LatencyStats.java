@@ -25,55 +25,45 @@ import java.util.concurrent.atomic.AtomicLongFieldUpdater;
  * based on that instance's estimated inter-recording intervalEndTimes.
  */
 public class LatencyStats {
+    private static PauseDetector defaultPauseDetector;
+    private static Builder defaultBuilder = new Builder();
+
     // All times and time units are in nanoseconds
-    
-    static final long DEFAULT_HighestTrackableLatency = 3600000000000L;
-    static final int DEFAULT_NumberOfSignificantValueDigits = 2;
 
-    static final int DEFAULT_IntervalEstimatorWindowLength = 1024;
-    static final long DEFAULT_IntervalEstimatorTimeCap = 10000000000L; /* 10 sec */
+    private final long lowestTrackableLatency;
+    private final long highestTrackableLatency;
+    private final int numberOfSignificantValueDigits;
 
-    static final long DEFAULT_HistogramUpdateInterval = 1000000000L;
+    private final long histogramUpdateInterval;
+    private final int numberOfRecentHistogramIntervalsToTrack;
 
-    static final int DEFAULT_numberOfRecentHistogramIntervalsToTrack = 2;
+    private AtomicHistogram currentRecordingHistogram;
+    private Histogram currentPauseCorrectionHistogram;
 
-    final long highestTrackableLatency;
-    final int numberOfSignificantValueDigits;
+    private AtomicHistogram[] intervalRecordingHistograms;
+    private Histogram[] intervalPauseCorrectingHistograms;
+    private long[] intervalCaptureTimes;
 
-    final int intervalEstimatorWindowLength;
+    private volatile int latestIntervalHistogramIndex = 0;
 
-    final long histogramUpdateInterval;
-    final int numberOfRecentHistogramIntervalsToTrack;
-
-    final PauseDetector pauseDetector;
-
-    AtomicHistogram currentRecordingHistogram;
-
-    Histogram currentPauseCorrectionHistogram;
-
-    AtomicHistogram[] intervalRecordingHistograms;
-    Histogram[] intervalPauseCorrectingHistograms;
-    long[] intervalSampleTimes;
-
-    volatile int latestIntervalHistogramIndex = 0;
-
-    Histogram uncorrectedAccumulatedHistogram;
-    Histogram accumulatedHistogram;
+    private Histogram uncorrectedAccumulatedHistogram;
+    private Histogram accumulatedHistogram;
 
     private volatile long recordingStartEpoch = 0;
     private volatile long recordingEndEpoch = 0;
-    static final AtomicLongFieldUpdater<LatencyStats> recordingStartEpochUpdater =
+    private static final AtomicLongFieldUpdater<LatencyStats> recordingStartEpochUpdater =
             AtomicLongFieldUpdater.newUpdater(LatencyStats.class, "recordingStartEpoch");
-    static final AtomicLongFieldUpdater<LatencyStats> recordingEndEpochUpdater =
+    private static final AtomicLongFieldUpdater<LatencyStats> recordingEndEpochUpdater =
             AtomicLongFieldUpdater.newUpdater(LatencyStats.class, "recordingEndEpoch");
 
-    static final Timer latencyStatsTasksTimer = new Timer();
-    final PeriodicHistogramUpdateTask updateTask;
-    final PauseTracker pauseTracker;
+    private static final Timer latencyStatsTasksTimer = new Timer();
+    private final PeriodicHistogramUpdateTask updateTask;
+    private final PauseTracker pauseTracker;
 
-    final IntervalEstimator intervalEstimator;
+    private final IntervalEstimator intervalEstimator;
 
-    static PauseDetector defaultPauseDetector;
+    private final PauseDetector pauseDetector;
+
 
     /**
      * Set the default pause detector for the LatencyStats class. Used by constructors that do
@@ -88,43 +78,26 @@ public class LatencyStats {
     /**
      * Create a LatencyStats object with default settings:
      * use the default pause detector (must be separately set using {@link #setDefaultPauseDetector}), a default
-     * histogram update interval (1 sec), a default histogram range and accuracy (highest trackable latency of 1hr,
+     * histogram update interval (1 sec), a default histogram range and accuracy (1 usec to 1hr,
      * 2 decimal points of accuracy), and a default moving window estimator (1024 entry moving window, time capped at
      * 10 seconds).
      */
     public LatencyStats() {
-        this(DEFAULT_HistogramUpdateInterval);
-    }
-
-    /**
-     * Create a LatencyStats object with the provided update interval, and otherwise default settings:
-     * use the default pause detector (must be separately set using {@link #setDefaultPauseDetector}), a default
-     * histogram range and accuracy (highest trackable latency of 1hr,
-     * 2 decimal points of accuracy), and a default moving window estimator (1024 entry moving window, time capped at
-     * 5 seconds).
-     * @param histogramUpdateInterval   The length (in nanoseconds) of the automatically updating time interval.
-     */
-    public LatencyStats(long histogramUpdateInterval) {
-        this(defaultPauseDetector, histogramUpdateInterval);
-    }
-
-    /**
-     * Create a LatencyStats object with the provided pause detector and update interval, and otherwise
-     * default settings:
-     * a default histogram range and accuracy (highest trackable latency of 1hr, 2 decimal points of accuracy),
-     * and a default moving window estimator (1024 entry moving window, time capped at 5 seconds).
-     * @param pauseDetector The pause detector to use for identifying and correcting for pauses
-     * @param histogramUpdateInterval   The length (in nanoseconds) of the automatically updating time interval.
-     */
-    public LatencyStats(PauseDetector pauseDetector, long histogramUpdateInterval) {
-        this(DEFAULT_HighestTrackableLatency, DEFAULT_NumberOfSignificantValueDigits,
-                histogramUpdateInterval, DEFAULT_numberOfRecentHistogramIntervalsToTrack,
-                DEFAULT_IntervalEstimatorWindowLength, DEFAULT_IntervalEstimatorTimeCap,
-                pauseDetector);
+        this(
+                defaultBuilder.lowestTrackableLatency,
+                defaultBuilder.highestTrackableLatency,
+                defaultBuilder.numberOfSignificantValueDigits,
+                defaultBuilder.histogramUpdateInterval,
+                defaultBuilder.numberOfRecentHistogramIntervalsToTrack,
+                defaultBuilder.intervalEstimatorWindowLength,
+                defaultBuilder.intervalEstimatorTimeCap,
+                defaultBuilder.pauseDetector
+        );
     }
 
     /**
      *
+     * @param lowestTrackableLatency   Lowest trackable latency in latency histograms
      * @param highestTrackableLatency   Highest trackable latency in latency histograms
      * @param numberOfSignificantValueDigits Number of significant [decimal] digits of accuracy in latency histograms
      * @param histogramUpdateInterval   The length (in nanoseconds) of the automatically updating time interval.
@@ -133,55 +106,58 @@ public class LatencyStats {
      * @param intervalEstimatorTimeCap Time cap (in nanoseconds) of window in moving window interval estimator
      * @param pauseDetector The pause detector to use for identifying and correcting for pauses
      */
-    public LatencyStats(final long highestTrackableLatency, final int numberOfSignificantValueDigits,
-                        final long histogramUpdateInterval, final int numberOfRecentHistogramIntervalsToTrack,
-                        final int intervalEstimatorWindowLength, final long intervalEstimatorTimeCap,
+    public LatencyStats(final long lowestTrackableLatency,
+                        final long highestTrackableLatency,
+                        final int numberOfSignificantValueDigits,
+                        final long histogramUpdateInterval,
+                        final int numberOfRecentHistogramIntervalsToTrack,
+                        final int intervalEstimatorWindowLength,
+                        final long intervalEstimatorTimeCap,
                         final PauseDetector pauseDetector) {
 
         if (pauseDetector == null) {
+            if (defaultPauseDetector == null) {
+                throw new IllegalStateException("If a pause detector is not supplied, a default pause detector must first be set for LatencyStats.");
+            }
             this.pauseDetector = defaultPauseDetector;
         } else {
             this.pauseDetector = pauseDetector;
         }
 
-        if (this.pauseDetector == null) {
-            throw new IllegalArgumentException("Either a non-null pauseDetector argument must be supplied, or a default pause detector must be set for LatencyStats");
-        }
-
+        this.lowestTrackableLatency = lowestTrackableLatency;
         this.highestTrackableLatency = highestTrackableLatency;
         this.numberOfSignificantValueDigits = numberOfSignificantValueDigits;
         this.histogramUpdateInterval = histogramUpdateInterval;
         this.numberOfRecentHistogramIntervalsToTrack = numberOfRecentHistogramIntervalsToTrack;
-        this.intervalEstimatorWindowLength = intervalEstimatorWindowLength;
 
         // Create alternating recording histograms:
-        currentRecordingHistogram = new AtomicHistogram(highestTrackableLatency, numberOfSignificantValueDigits);
+        currentRecordingHistogram = new AtomicHistogram(lowestTrackableLatency, highestTrackableLatency, numberOfSignificantValueDigits);
         intervalRecordingHistograms = new AtomicHistogram[numberOfRecentHistogramIntervalsToTrack];
         for (int i = 0; i < numberOfRecentHistogramIntervalsToTrack; i++) {
-            intervalRecordingHistograms[i] = new AtomicHistogram(highestTrackableLatency, numberOfSignificantValueDigits);
+            intervalRecordingHistograms[i] = new AtomicHistogram(lowestTrackableLatency, highestTrackableLatency, numberOfSignificantValueDigits);
         }
 
         // Create alternating pause correction histograms:
-        currentPauseCorrectionHistogram = new Histogram(highestTrackableLatency, numberOfSignificantValueDigits);
+        currentPauseCorrectionHistogram = new Histogram(lowestTrackableLatency, highestTrackableLatency, numberOfSignificantValueDigits);
         intervalPauseCorrectingHistograms = new Histogram[numberOfRecentHistogramIntervalsToTrack];
         for (int i = 0; i < numberOfRecentHistogramIntervalsToTrack; i++) {
-            intervalPauseCorrectingHistograms[i] = new Histogram(highestTrackableLatency, numberOfSignificantValueDigits);
+            intervalPauseCorrectingHistograms[i] = new Histogram(lowestTrackableLatency, highestTrackableLatency, numberOfSignificantValueDigits);
         }
         // Create accumulated Histograms:
-        accumulatedHistogram = new Histogram(highestTrackableLatency, numberOfSignificantValueDigits);
-        uncorrectedAccumulatedHistogram = new Histogram(highestTrackableLatency, numberOfSignificantValueDigits);
+        accumulatedHistogram = new Histogram(lowestTrackableLatency, highestTrackableLatency, numberOfSignificantValueDigits);
+        uncorrectedAccumulatedHistogram = new Histogram(lowestTrackableLatency, highestTrackableLatency, numberOfSignificantValueDigits);
 
-        intervalSampleTimes = new long[numberOfRecentHistogramIntervalsToTrack];
+        intervalCaptureTimes = new long[numberOfRecentHistogramIntervalsToTrack];
 
         // Create interval estimator:
         intervalEstimator = new TimeCappedMovingAverageIntervalEstimator(intervalEstimatorWindowLength,
-                intervalEstimatorTimeCap, pauseDetector);
+                intervalEstimatorTimeCap, this.pauseDetector);
 
         // Create and schedule periodic update task:
         updateTask = new PeriodicHistogramUpdateTask(this.histogramUpdateInterval, this);
 
         // Create PauseTracker and register with pauseDetector:
-        pauseTracker = new PauseTracker(pauseDetector, this);
+        pauseTracker = new PauseTracker(this.pauseDetector, this);
     }
 
     /**
@@ -193,7 +169,6 @@ public class LatencyStats {
         trackRecordingInterval();
         currentRecordingHistogram.recordValue(latency);
         recordingEndEpochUpdater.incrementAndGet(this);
-
     }
 
 
@@ -240,7 +215,7 @@ public class LatencyStats {
      * @return a copy of the interval latency histogram
      */
     public synchronized Histogram getIntervalHistogram() {
-        Histogram intervalHistogram = new Histogram(highestTrackableLatency, numberOfSignificantValueDigits);
+        Histogram intervalHistogram = new Histogram(lowestTrackableLatency, highestTrackableLatency, numberOfSignificantValueDigits);
         getIntervalHistogramInto(intervalHistogram);
         return intervalHistogram;
     }
@@ -272,7 +247,7 @@ public class LatencyStats {
      */
     public synchronized Histogram getUncorrectedIntervalHistogram() {
         int index = latestIntervalHistogramIndex;
-        Histogram intervalHistogram = new Histogram(highestTrackableLatency, numberOfSignificantValueDigits);
+        Histogram intervalHistogram = new Histogram(lowestTrackableLatency, highestTrackableLatency, numberOfSignificantValueDigits);
         intervalRecordingHistograms[index].copyInto(intervalHistogram);
         return intervalHistogram;
     }
@@ -303,6 +278,111 @@ public class LatencyStats {
         pauseTracker.stop();
     }
 
+    /**
+     * get the IntervalEstimator used by this LatencyStats object
+     * @return the IntervalEstimator used by this LatencyStats object
+     */
+    public IntervalEstimator getIntervalEstimator() {
+        return intervalEstimator;
+    }
+
+    /**
+     * get the PauseDetector used by this LatencyStats object
+     * @return the PauseDetector used by this LatencyStats object
+     */
+    public PauseDetector getPauseDetector() {
+        return pauseDetector;
+    }
+
+    /**
+     * A fluent API builder class for creating LatencyStats objects.
+     * <br>Uses the following defaults:</br>
+     * <li>lowestTrackableLatency:                  1000 (1 usec)</li>
+     * <li>highestTrackableLatency:                 3600000000000L (1 hour)</li>
+     * <li>numberOfSignificantValueDigits:          2</li>
+     * <li>histogramUpdateInterval:                 1000000000L (1 sec) </li>
+     * <li>numberOfRecentHistogramIntervalsToTrack: 2</li>
+     * <li>intervalEstimatorWindowLength:           1024</li>
+     * <li>intervalEstimatorTimeCap:                10000000000L (10 sec)</li>
+     * <li>pauseDetector:                           (use LatencyStats default)</li>
+     */
+    public static class Builder {
+        private long lowestTrackableLatency = 1000L; /* 1 usec */
+        private long highestTrackableLatency = 3600000000000L; /* 1 hr */
+        private int numberOfSignificantValueDigits = 2;
+        private long histogramUpdateInterval = 1000000000L; /* 1 sec */
+        private int numberOfRecentHistogramIntervalsToTrack = 2;
+        private int intervalEstimatorWindowLength = 1024;
+        private long intervalEstimatorTimeCap = 10000000000L; /* 10 sec */
+        private PauseDetector pauseDetector = null;
+
+        public static Builder create() {
+            return new Builder();
+        }
+
+        public Builder() {
+
+        }
+
+        public Builder lowestTrackableLatency(long lowestTrackableLatency) {
+            this.lowestTrackableLatency = lowestTrackableLatency;
+            return this;
+        }
+
+
+        public Builder highestTrackableLatency(long highestTrackableLatency) {
+            this.highestTrackableLatency = highestTrackableLatency;
+            return this;
+        }
+
+
+        public Builder numberOfSignificantValueDigits(int numberOfSignificantValueDigits) {
+            this.numberOfSignificantValueDigits = numberOfSignificantValueDigits;
+            return this;
+        }
+
+
+        public Builder histogramUpdateInterval(long histogramUpdateInterval) {
+            this.histogramUpdateInterval = histogramUpdateInterval;
+            return this;
+        }
+
+
+        public Builder numberOfRecentHistogramIntervalsToTrack(int numberOfRecentHistogramIntervalsToTrack) {
+            this.numberOfRecentHistogramIntervalsToTrack = numberOfRecentHistogramIntervalsToTrack;
+            return this;
+        }
+
+
+        public Builder intervalEstimatorWindowLength(int intervalEstimatorWindowLength) {
+            this.intervalEstimatorWindowLength = intervalEstimatorWindowLength;
+            return this;
+        }
+
+
+        public Builder intervalEstimatorTimeCap(long intervalEstimatorTimeCap) {
+            this.intervalEstimatorTimeCap = intervalEstimatorTimeCap;
+            return this;
+        }
+
+
+        public Builder pauseDetector(PauseDetector pauseDetector) {
+            this.pauseDetector = pauseDetector;
+            return this;
+        }
+
+
+        public LatencyStats build() {
+            return new LatencyStats(lowestTrackableLatency,
+                    highestTrackableLatency,
+                    numberOfSignificantValueDigits,
+                    histogramUpdateInterval,
+                    numberOfRecentHistogramIntervalsToTrack,
+                    intervalEstimatorWindowLength,
+                    intervalEstimatorTimeCap,
+                    pauseDetector);
+        }
+    }
 
     synchronized void recordDetectedPause(long pauseLength, long pauseEndTime) {
         long estimatedInterval =  intervalEstimator.getEstimatedInterval(pauseEndTime - pauseLength);
@@ -340,7 +420,7 @@ public class LatencyStats {
         intervalPauseCorrectingHistograms[indexToSwap].reset();
 
         swapHistograms(indexToSwap);
-        intervalSampleTimes[indexToSwap] = System.nanoTime();
+        intervalCaptureTimes[indexToSwap] = System.nanoTime();
 
         // Update the latest interval histogram index.
         latestIntervalHistogramIndex = indexToSwap;
@@ -409,4 +489,6 @@ public class LatencyStats {
             }
         }
     }
+
+
 }

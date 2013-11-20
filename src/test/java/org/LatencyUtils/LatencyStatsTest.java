@@ -21,8 +21,6 @@ public class LatencyStatsTest {
     static final long highestTrackableValue = 3600L * 1000 * 1000 * 1000; // e.g. for 1 hr in nsec units
     static final int numberOfSignificantValueDigits = 2;
 
-    static long detectedPauseLength = 0;
-
     @Test
     public void testLatencyStats() throws Exception {
         SimplePauseDetector pauseDetector = new SimplePauseDetector(1000000L /* 1 msec sleep */,
@@ -30,14 +28,9 @@ public class LatencyStatsTest {
 
         LatencyStats.setDefaultPauseDetector(pauseDetector);
 
-        PauseTracker tracker = new PauseTracker(pauseDetector, this);
-
         LatencyStats latencyStats = new LatencyStats();
 
-        Histogram sample = latencyStats.getAccumulatedHistogram();
-
         try {
-            detectedPauseLength = 0;
 
             Thread.sleep(50);
 
@@ -89,36 +82,8 @@ public class LatencyStatsTest {
 
         latencyStats.stop();
 
-        tracker.stop();
-
         pauseDetector.shutdown();
     }
 
-    static class PauseTracker extends WeakReference<LatencyStatsTest> implements PauseDetectorListener {
-        final PauseDetector pauseDetector;
-
-        PauseTracker(final PauseDetector pauseDetector, final LatencyStatsTest test) {
-            super(test);
-            this.pauseDetector = pauseDetector;
-            // Register as listener:
-            pauseDetector.addListener(this);
-        }
-
-        public void stop() {
-            pauseDetector.removeListener(this);
-        }
-
-        public void handlePauseEvent(final long pauseLengthNsec, final long pauseEndTimeNsec) {
-            final LatencyStatsTest test = this.get();
-
-            if (test != null) {
-                System.out.println("Pause detected: paused for " + pauseLengthNsec + " nsec, at " + pauseEndTimeNsec);
-                detectedPauseLength = pauseLengthNsec;
-            } else {
-                // Remove listener:
-                stop();
-            }
-        }
-    }
 }
 
