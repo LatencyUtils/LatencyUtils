@@ -26,10 +26,10 @@
  * latency value would be recorded, even though any requested operation would be stalled by the pause.</li>
  * <p>
  * <h3>The Solution</h3>
- * The {@link #LatencyStats} class is designed for simple, drop-in use as a latency behavior recording object
+ * The {@link org.LatencyUtils.LatencyStats} class is designed for simple, drop-in use as a latency behavior recording object
  * in common in-process latency recording and tracking situations. LatencyStats includes under-the-hood tracking
  * and correction of pause effects, compensating for coordinated omission. It does so by using pluggable
- * pause detectors and interval estimators that together with {@link #LatencyStats} will transparently produce
+ * pause detectors and interval estimators that together with {@link org.LatencyUtils.LatencyStats} will transparently produce
  * corrected histogram values for the recorded latency behavior.
  *
  */
