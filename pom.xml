@@ -119,9 +119,9 @@
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>org.HdrHistogram</groupId>
+            <groupId>org.hdrhistogram</groupId>
             <artifactId>HdrHistogram</artifactId>
-            <version>1.0.6</version>
+            <version>1.0.8</version>
         </dependency>
     </dependencies>
     
