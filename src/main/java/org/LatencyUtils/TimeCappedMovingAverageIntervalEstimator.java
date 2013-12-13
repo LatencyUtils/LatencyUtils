@@ -36,8 +36,9 @@ public class TimeCappedMovingAverageIntervalEstimator extends MovingAverageInter
     final long baseTimeCap;
     final PauseTracker pauseTracker;
     long timeCap;
+    volatile long timeOfLastEstimatedInterval = 0;
 
-    static final int maxPausesToTrack = 16;
+    static final int maxPausesToTrack = 32;
     volatile long latestPauseStartTime = 0;
     AtomicLongArray pauseStartTimes = new AtomicLongArray(maxPausesToTrack);
     AtomicLongArray pauseLengths = new AtomicLongArray(maxPausesToTrack);
@@ -93,50 +94,21 @@ public class TimeCappedMovingAverageIntervalEstimator extends MovingAverageInter
      */
     @Override
     public synchronized long getEstimatedInterval(final long when) {
-        long timeCapStartTime = when - timeCap;
-        long earliestPauseStartTime = pauseStartTimes.get(earliestPauseIndex);
+        timeOfLastEstimatedInterval = when;
 
-        // Skip over and get rid of any pause records whose time has passed:
-        while (earliestPauseStartTime < timeCapStartTime) {
-            // We just got past the start of this pause.
+        eliminateStalePauses(when);
 
-            // Reduce timeCap to skip over pause:
-            timeCap -= pauseLengths.get(earliestPauseIndex);
-            timeCapStartTime = when - timeCap;
+        int numberOfWindowPositionsOutsideOfTimeCap = determineNumberOfWindowPositionsOutsideOfTimeCap(when);
 
-            // Erase pause record:
-            pauseStartTimes.set(earliestPauseIndex, Long.MAX_VALUE);
-            pauseLengths.set(earliestPauseIndex, 0);
+        long windowStartTime = determineEarliestQualifyingTimeInWindow(when);
 
-            earliestPauseIndex = (earliestPauseIndex + 1) % maxPausesToTrack;
-            earliestPauseStartTime = pauseStartTimes.get(earliestPauseIndex);
-        }
-
-        int currentPosition = getCurrentPosition();
-
-        int earliestQualifyingWindowPosition = currentPosition;
-        // search for first position that falls within the time cap:
-        int numberOfWindowPositionsSkipped = 0;
-        // TODO: use binary search instead of linear walk:
-        while (intervalEndTimes[earliestQualifyingWindowPosition] < timeCapStartTime) {
-            numberOfWindowPositionsSkipped++;
-            earliestQualifyingWindowPosition = (int) ((earliestQualifyingWindowPosition + 1) & windowMask);
-            if (earliestQualifyingWindowPosition == currentPosition) {
-                break;
-            }
-        }
-        if (numberOfWindowPositionsSkipped >= (windowLength - 1)) {
-            // Nothing in the window falls within the time cap:
-            return Long.MAX_VALUE;
-        }
-
-        long windowStartTime = intervalEndTimes[earliestQualifyingWindowPosition];
-        if (windowStartTime > earliestPauseStartTime) {
-            windowStartTime = earliestPauseStartTime;
-        }
         long windowTimeSpan = when - windowStartTime;
         long totalPauseTimeInWindow = timeCap - baseTimeCap;
-        int positionDelta = windowLength - (numberOfWindowPositionsSkipped + 1);
+        int positionDelta = (windowLength - numberOfWindowPositionsOutsideOfTimeCap) - 1;
+
+        if (positionDelta <= 0) {
+            return Long.MAX_VALUE;
+        }
 
         long averageInterval = (windowTimeSpan - totalPauseTimeInWindow)  / positionDelta;
 
@@ -176,6 +148,91 @@ public class TimeCappedMovingAverageIntervalEstimator extends MovingAverageInter
         }
     }
 
+    @Override
+    public String toString() {
+        long when = timeOfLastEstimatedInterval;
+
+        eliminateStalePauses(when);
+
+        int numberOfWindowPositionsOutsideOfTimeCap = determineNumberOfWindowPositionsOutsideOfTimeCap(when);
+
+        long windowStartTime = determineEarliestQualifyingTimeInWindow(when);
+
+        long windowTimeSpan = when - windowStartTime;
+        long totalPauseTimeInWindow = timeCap - baseTimeCap;
+        int positionDelta = (windowLength - numberOfWindowPositionsOutsideOfTimeCap) - 1;
+
+        long averageInterval = (windowTimeSpan - totalPauseTimeInWindow)  / positionDelta;
+
+        return "IntervalEstimator: \n" +
+                "Estimated Interval: " + getEstimatedInterval(when) + " (calculated at time " + when + ")\n" +
+                "Time cap: " + timeCap + ", count = " + count.get() + ", currentPosition = " + getCurrentPosition() + "\n" +
+                "timeCapStartTime = " + (when - timeCap) + ", numberOfWindowPositionsSkipped = " + numberOfWindowPositionsOutsideOfTimeCap + "\n" +
+                "windowStartTime = " + windowStartTime + ", windowTimeSpan = " + windowTimeSpan + ", positionDelta = " + positionDelta + "\n" +
+                "totalPauseTimeInWindow = " + totalPauseTimeInWindow + ", averageInterval = " + averageInterval + "\n";
+    }
+
+    private void eliminateStalePauses(final long when) {
+        long newEarliestQualifyingTimeInWindow = determineEarliestQualifyingTimeInWindow(when);
+        long earliestQualifyingTimeInWindow;
+        do {
+            earliestQualifyingTimeInWindow = newEarliestQualifyingTimeInWindow;
+
+            long timeCapStartTime = when - timeCap;
+            long earliestPauseTimeToConsider = Math.max(timeCapStartTime, earliestQualifyingTimeInWindow);
+
+            long earliestPauseStartTime = pauseStartTimes.get(earliestPauseIndex);
+
+            // Skip over and get rid of any pause records whose time has passed:
+            while (earliestPauseStartTime < earliestPauseTimeToConsider) {
+                // We just got past the start of this pause.
+
+                // Reduce timeCap to skip over pause; recalculate timeCapStartTime and earliestPauseTimeToConsider:
+                timeCap -= pauseLengths.get(earliestPauseIndex);
+                timeCapStartTime = when - timeCap;
+                earliestPauseTimeToConsider = Math.max(timeCapStartTime, earliestQualifyingTimeInWindow);
+
+                // Erase pause record:
+                pauseStartTimes.set(earliestPauseIndex, Long.MAX_VALUE);
+                pauseLengths.set(earliestPauseIndex, 0);
+
+                earliestPauseIndex = (earliestPauseIndex + 1) % maxPausesToTrack;
+                earliestPauseStartTime = pauseStartTimes.get(earliestPauseIndex);
+            }
+            newEarliestQualifyingTimeInWindow = determineEarliestQualifyingTimeInWindow(when);
+        } while (earliestQualifyingTimeInWindow != newEarliestQualifyingTimeInWindow);
+    }
+
+    private long determineEarliestQualifyingTimeInWindow(final long when) {
+        int numberOfWindowPositionsOutsideOfTimeCap = determineNumberOfWindowPositionsOutsideOfTimeCap(when);
+        if (numberOfWindowPositionsOutsideOfTimeCap == windowLength) {
+            return Long.MAX_VALUE;
+        }
+
+        int earliestQualifyingWindowPosition =
+                (int) ((getCurrentPosition() + numberOfWindowPositionsOutsideOfTimeCap) & windowMask);
+
+        return intervalEndTimes[earliestQualifyingWindowPosition];
+    }
+
+    private int determineNumberOfWindowPositionsOutsideOfTimeCap(long when) {
+        int currentPosition = getCurrentPosition();
+        long timeCapStartTime = when - timeCap;
+
+        int earliestQualifyingWindowPosition = currentPosition;
+        // search for first position that falls within the time cap:
+        // TODO: use binary search instead of linear walk:
+        int numberOfWindowPositionsOutsideOfTimeCap = 0;
+        while (intervalEndTimes[earliestQualifyingWindowPosition] < timeCapStartTime) {
+            numberOfWindowPositionsOutsideOfTimeCap++;
+            earliestQualifyingWindowPosition = (int) ((earliestQualifyingWindowPosition + 1) & windowMask);
+            if (earliestQualifyingWindowPosition == currentPosition) {
+                break;
+            }
+        }
+
+        return numberOfWindowPositionsOutsideOfTimeCap;
+    }
 
     /**
      * PauseTracker is used to feed pause correction histograms whenever a pause is reported:

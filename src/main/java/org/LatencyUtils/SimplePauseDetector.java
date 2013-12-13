@@ -99,7 +99,7 @@ public class SimplePauseDetector extends PauseDetector {
 
         public void run() {
             observedLasUpdateTime = consensusLatestTime.get();
-            long now = System.nanoTime();
+            long now = TimeServices.nanoTime();
             long prevNow = now;
             consensusLatestTime.compareAndSet(observedLasUpdateTime, now);
 
@@ -114,7 +114,7 @@ public class SimplePauseDetector extends PauseDetector {
 
                 observedLasUpdateTime = consensusLatestTime.get();
                 // Volatile store above makes sure new now is measured after observedLasUpdateTime sample
-                now = System.nanoTime();
+                now = TimeServices.nanoTime();
                 // Move consensus forward and act on delta:
                 if (consensusLatestTime.compareAndSet(observedLasUpdateTime, now)) {
                     final long deltaTimeNs = now - observedLasUpdateTime;
@@ -154,12 +154,12 @@ public class SimplePauseDetector extends PauseDetector {
     public void stallDetectorThreads(long threadNumberMask, long stallLength) {
         long savedMask = stallTheadMask;
         stallTheadMask = threadNumberMask;
-        long startTime = System.nanoTime();
+        long startTime = TimeServices.nanoTime();
         long endTime = startTime + stallLength;
         long remainingTime = stallLength;
 
         do {
-            remainingTime = endTime - System.nanoTime();
+            remainingTime = endTime - TimeServices.nanoTime();
             if (remainingTime > 1000000L) {
                 java.util.concurrent.locks.LockSupport.parkNanos(remainingTime);
             }

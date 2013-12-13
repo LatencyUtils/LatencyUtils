@@ -56,7 +56,7 @@ public class LatencyStats {
     private static final AtomicLongFieldUpdater<LatencyStats> recordingEndEpochUpdater =
             AtomicLongFieldUpdater.newUpdater(LatencyStats.class, "recordingEndEpoch");
 
-    private static final Timer latencyStatsTasksTimer = new Timer();
+    private static final TimeServices.Timer latencyStatsTasksTimer = new TimeServices.Timer();
     private final PeriodicHistogramUpdateTask updateTask;
     private final PauseTracker pauseTracker;
 
@@ -385,14 +385,14 @@ public class LatencyStats {
     }
 
     synchronized void recordDetectedPause(long pauseLength, long pauseEndTime) {
-        long estimatedInterval =  intervalEstimator.getEstimatedInterval(pauseEndTime - pauseLength);
+        long estimatedInterval =  intervalEstimator.getEstimatedInterval(pauseEndTime);
         if (pauseLength > estimatedInterval) {
             currentPauseCorrectionHistogram.recordValueWithExpectedInterval(pauseLength, estimatedInterval);
         }
     }
 
     void trackRecordingInterval() {
-        long now = System.nanoTime();
+        long now = TimeServices.nanoTime();
         intervalEstimator.recordInterval(now);
     }
 
@@ -420,7 +420,7 @@ public class LatencyStats {
         intervalPauseCorrectingHistograms[indexToSwap].reset();
 
         swapHistograms(indexToSwap);
-        intervalCaptureTimes[indexToSwap] = System.nanoTime();
+        intervalCaptureTimes[indexToSwap] = TimeServices.nanoTime();
 
         // Update the latest interval histogram index.
         latestIntervalHistogramIndex = indexToSwap;

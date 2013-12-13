@@ -96,7 +96,7 @@ public class TimeCappedMovingAverageIntervalEstimatorTest {
             estimator.recordInterval(now);
         }
 
-        now = 5500000000L + (31 * 1000000);
+        now = 5501000000L + (30 * 1000000);
 
         Assert.assertEquals("expected interval to be 1000000", 1000000, estimator.getEstimatedInterval(now));
 
@@ -155,7 +155,55 @@ public class TimeCappedMovingAverageIntervalEstimatorTest {
 
         // Should be able to peel off both pauses and see empty window:
         Assert.assertEquals("expected interval to be MAX_VALUE", Long.MAX_VALUE, estimator.getEstimatedInterval(now));
+    }
 
+    @Test
+    public void testToString() throws Exception {
+        MyArtificialPauseDetector pauseDetector = new MyArtificialPauseDetector();
+        TimeCappedMovingAverageIntervalEstimator estimator = new TimeCappedMovingAverageIntervalEstimator(1024, 10000000000L /* 10 sec */, pauseDetector);
+
+        for (int i = 0; i < 2000; i++) {
+            estimator.recordInterval(System.nanoTime());
+            Thread.sleep(1);
+        }
+
+        Thread.sleep(1000);
+
+        estimator.getEstimatedInterval(System.nanoTime());
+        System.out.print("toString():\n" + estimator);
+    }
+
+    @Test
+    public void testIntervalWithSleeping() throws Exception {
+        MyArtificialPauseDetector pauseDetector = new MyArtificialPauseDetector();
+        TimeCappedMovingAverageIntervalEstimator estimator = new TimeCappedMovingAverageIntervalEstimator(128, 10000000000L /* 10 sec */, pauseDetector);
+
+        System.out.println("\nTesting Interval Estimator with sleeps:\n");
+        long startTime = System.nanoTime();
+        pauseDetector.recordPause(1000, startTime);
+        for (int i = 0; i < 5; i++) {
+            estimator.getEstimatedInterval(System.nanoTime());
+            System.out.println("Interval estimator " + (System.nanoTime() - startTime) + " in:\n" +
+                    estimator.toString());
+            for (int j = 0; j < 64; j++) {
+                estimator.recordInterval(System.nanoTime());
+                Thread.sleep(1);
+            }
+        }
+        long pauseStartTime = System.nanoTime();
+        Thread.sleep(500);
+        long pauseEndTime = System.nanoTime();
+        pauseDetector.recordPause(pauseEndTime - pauseStartTime, pauseEndTime);
+        System.out.println("\n*** Paused for " + (pauseEndTime - pauseStartTime) + " nsec\n");
+        for (int i = 0; i < 5; i++) {
+            estimator.getEstimatedInterval(System.nanoTime());
+            System.out.println("Interval estimator " + (System.nanoTime() - startTime) + " in:\n" +
+                    estimator.toString());
+            for (int j = 0; j < 64; j++) {
+                estimator.recordInterval(System.nanoTime());
+                Thread.sleep(1);
+            }
+        }
 
     }
 

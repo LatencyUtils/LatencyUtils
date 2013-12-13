@@ -42,38 +42,42 @@ public class LatencyStatsTest {
                 lastTime = now;
             }
 
+            System.out.println("Estimated interval = " + latencyStats.getIntervalEstimator().getEstimatedInterval(lastTime));
             Histogram accumulatedHistogram = latencyStats.getAccumulatedHistogram();
             Histogram intervalHistogram = latencyStats.getIntervalHistogram();
 
-            System.out.println("Accumulated Average latency for 5msec sleeps: " + accumulatedHistogram.getHistogramData().getMean());
-            System.out.println("Interval Average latency for 5msec sleeps: " + intervalHistogram.getHistogramData().getMean());
+            System.out.println("Accumulated Average latency for 5msec sleeps: " + accumulatedHistogram.getHistogramData().getMean() + ", count = " + accumulatedHistogram.getHistogramData().getTotalCount());
+            System.out.println("Interval Average latency for 5msec sleeps: " + intervalHistogram.getHistogramData().getMean() + ", count = " + intervalHistogram.getHistogramData().getTotalCount());
 
             pauseDetector.stallDetectorThreads(0x7, 2000000000L);
 
             Thread.sleep(500);
 
+            System.out.println("Estimated interval = " + latencyStats.getIntervalEstimator().getEstimatedInterval(System.nanoTime()));
             accumulatedHistogram = latencyStats.getAccumulatedHistogram();
             intervalHistogram = latencyStats.getIntervalHistogram();
 
-            System.out.println("Post-pause Accumulated Average latency for 5msec sleeps: " + accumulatedHistogram.getHistogramData().getMean());
-            System.out.println("Post-pause Interval Average latency for 5msec sleeps: " + intervalHistogram.getHistogramData().getMean());
+            System.out.println("Post-pause Accumulated Average latency for 5msec sleeps: " + accumulatedHistogram.getHistogramData().getMean() + ", count = " + accumulatedHistogram.getHistogramData().getTotalCount());
+            System.out.println("Post-pause Interval Average latency for 5msec sleeps: " + intervalHistogram.getHistogramData().getMean() + ", count = " + intervalHistogram.getHistogramData().getTotalCount());
 
             Thread.sleep(500);
 
+            System.out.println("Estimated interval = " + latencyStats.getIntervalEstimator().getEstimatedInterval(System.nanoTime()));
             accumulatedHistogram = latencyStats.getAccumulatedHistogram();
             intervalHistogram = latencyStats.getIntervalHistogram();
 
-            System.out.println("Post-pause Accumulated Average latency for 5msec sleeps: " + accumulatedHistogram.getHistogramData().getMean());
-            System.out.println("Post-pause Interval Average latency for 5msec sleeps: " + intervalHistogram.getHistogramData().getMean());
+            System.out.println("Post-pause Accumulated Average latency for 5msec sleeps: " + accumulatedHistogram.getHistogramData().getMean() + ", count = " + accumulatedHistogram.getHistogramData().getTotalCount());
+            System.out.println("Post-pause Interval Average latency for 5msec sleeps: " + intervalHistogram.getHistogramData().getMean() + ", count = " + intervalHistogram.getHistogramData().getTotalCount());
 
 
             Thread.sleep(2000);
 
+            System.out.println("Estimated interval = " + latencyStats.getIntervalEstimator().getEstimatedInterval(System.nanoTime()));
             accumulatedHistogram = latencyStats.getAccumulatedHistogram();
             intervalHistogram = latencyStats.getIntervalHistogram();
 
-            System.out.println("Post-pause Accumulated Average latency for 5msec sleeps: " + accumulatedHistogram.getHistogramData().getMean());
-            System.out.println("Post-pause Interval Average latency for 5msec sleeps: " + intervalHistogram.getHistogramData().getMean());
+            System.out.println("Post-pause Accumulated Average latency for 5msec sleeps: " + accumulatedHistogram.getHistogramData().getMean() + ", count = " + accumulatedHistogram.getHistogramData().getTotalCount());
+            System.out.println("Post-pause Interval Average latency for 5msec sleeps: " + intervalHistogram.getHistogramData().getMean() + ", count = " + intervalHistogram.getHistogramData().getTotalCount());
 
 
         } catch (InterruptedException ex) {
