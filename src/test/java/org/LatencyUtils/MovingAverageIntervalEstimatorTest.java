@@ -16,6 +16,10 @@ import java.lang.ref.WeakReference;
  */
 public class MovingAverageIntervalEstimatorTest {
 
+    static {
+        System.setProperty("LatencyUtils.useActualTime", "false");
+    }
+
     static long detectedPauseLength = 0;
 
     @Test

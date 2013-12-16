@@ -9,6 +9,7 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import java.lang.ref.WeakReference;
+import java.util.concurrent.TimeUnit;
 
 
 /**
@@ -16,13 +17,17 @@ import java.lang.ref.WeakReference;
  */
 public class TimeCappedMovingAverageIntervalEstimatorTest {
 
+    static {
+        System.setProperty("LatencyUtils.useActualTime", "false");
+    }
+
     @Test
     public void testWindowBehavior() throws Exception {
         MyArtificialPauseDetector pauseDetector = new MyArtificialPauseDetector();
         TimeCappedMovingAverageIntervalEstimator estimator = new TimeCappedMovingAverageIntervalEstimator(32, 1000000000L /* 1 sec */, pauseDetector);
         // Listeners are added as a concurrent operation, so wait a bit to let the listener register before we
         // start notifying of pauses:
-        java.util.concurrent.locks.LockSupport.parkNanos(20000000L);
+        TimeUnit.NANOSECONDS.sleep(20000000L);
 
         long now = 0;
 
@@ -53,8 +58,7 @@ public class TimeCappedMovingAverageIntervalEstimatorTest {
 
         pauseDetector.recordPause(1500000000L, now + 1500000000L);
         now += 1500000000L;
-        java.util.concurrent.locks.LockSupport.parkNanos(20000000L);
-
+        TimeUnit.NANOSECONDS.sleep(20000000L);
 
         Assert.assertEquals("expected interval to be 40", 40, estimator.getEstimatedInterval(now));
 
@@ -87,7 +91,7 @@ public class TimeCappedMovingAverageIntervalEstimatorTest {
 
         pauseDetector.recordPause(1500000000L, 5501000000L); /* 1.5 sec pause, started 4.001 sec. in */
         now = 5501000000L;
-        java.util.concurrent.locks.LockSupport.parkNanos(20000000L);
+        TimeUnit.NANOSECONDS.sleep(20000000L);
 
         estimator.recordInterval(now);
 
@@ -102,7 +106,7 @@ public class TimeCappedMovingAverageIntervalEstimatorTest {
 
         pauseDetector.recordPause(1500000000L /* 1.5 seconds pause */, 7100000000L /* started 5.6 seconds in */);
         now = 7100000000L;
-        java.util.concurrent.locks.LockSupport.parkNanos(20000000L);
+        TimeUnit.NANOSECONDS.sleep(20000000L);
 
         now = 7100000000L + (21 * 10000000);
 
@@ -142,11 +146,11 @@ public class TimeCappedMovingAverageIntervalEstimatorTest {
 
         pauseDetector.recordPause(1500000000L /* 1.5 seconds pause */, 13500000000L /* started 12 seconds in */);
         now = 13500000000L;
-        java.util.concurrent.locks.LockSupport.parkNanos(20000000L);
+        TimeUnit.NANOSECONDS.sleep(20000000L);
 
         pauseDetector.recordPause(1500000000L /* 1.5 seconds pause */, 15500000000L /* started 14 seconds in */);
         now = 15500000000L;
-        java.util.concurrent.locks.LockSupport.parkNanos(20000000L);
+        TimeUnit.NANOSECONDS.sleep(20000000L);
 
         // 2 recorded value within the past 4 seconds window that has 3 seconds of pause in it:
         Assert.assertEquals("expected interval to be 500000000", 500000000, estimator.getEstimatedInterval(now));
@@ -163,13 +167,15 @@ public class TimeCappedMovingAverageIntervalEstimatorTest {
         TimeCappedMovingAverageIntervalEstimator estimator = new TimeCappedMovingAverageIntervalEstimator(1024, 10000000000L /* 10 sec */, pauseDetector);
 
         for (int i = 0; i < 2000; i++) {
-            estimator.recordInterval(System.nanoTime());
-            Thread.sleep(1);
+            estimator.recordInterval(TimeServices.nanoTime());
+            TimeServices.moveTimeForwardMsec(1);
+            TimeUnit.NANOSECONDS.sleep(100000L); // let things propagate
         }
 
-        Thread.sleep(1000);
+        TimeServices.moveTimeForwardMsec(1000);
+        TimeUnit.NANOSECONDS.sleep(1000000L); // let things propagate
 
-        estimator.getEstimatedInterval(System.nanoTime());
+        estimator.getEstimatedInterval(TimeServices.nanoTime());
         System.out.print("toString():\n" + estimator);
     }
 
@@ -179,29 +185,38 @@ public class TimeCappedMovingAverageIntervalEstimatorTest {
         TimeCappedMovingAverageIntervalEstimator estimator = new TimeCappedMovingAverageIntervalEstimator(128, 10000000000L /* 10 sec */, pauseDetector);
 
         System.out.println("\nTesting Interval Estimator with sleeps:\n");
-        long startTime = System.nanoTime();
+        long startTime = TimeServices.nanoTime();
         pauseDetector.recordPause(1000, startTime);
         for (int i = 0; i < 5; i++) {
-            estimator.getEstimatedInterval(System.nanoTime());
-            System.out.println("Interval estimator " + (System.nanoTime() - startTime) + " in:\n" +
+            estimator.getEstimatedInterval(TimeServices.nanoTime());
+            System.out.println("Interval estimator " + (TimeServices.nanoTime() - startTime) + " in:\n" +
                     estimator.toString());
+            if (i > 0) {
+                Assert.assertEquals("expected interval to be 1000000", 1000000, estimator.getEstimatedInterval(TimeServices.nanoTime()));
+            }
             for (int j = 0; j < 64; j++) {
-                estimator.recordInterval(System.nanoTime());
-                Thread.sleep(1);
+                TimeServices.moveTimeForwardMsec(1);
+                TimeUnit.NANOSECONDS.sleep(100000L); // let things propagate
+                estimator.recordInterval(TimeServices.nanoTime());
             }
         }
-        long pauseStartTime = System.nanoTime();
-        Thread.sleep(500);
-        long pauseEndTime = System.nanoTime();
+        long pauseStartTime = TimeServices.nanoTime();
+        TimeServices.moveTimeForwardMsec(500);
+        TimeUnit.NANOSECONDS.sleep(1000000L); // let things propagate
+        long pauseEndTime = TimeServices.nanoTime();
         pauseDetector.recordPause(pauseEndTime - pauseStartTime, pauseEndTime);
         System.out.println("\n*** Paused for " + (pauseEndTime - pauseStartTime) + " nsec\n");
         for (int i = 0; i < 5; i++) {
-            estimator.getEstimatedInterval(System.nanoTime());
-            System.out.println("Interval estimator " + (System.nanoTime() - startTime) + " in:\n" +
+            estimator.getEstimatedInterval(TimeServices.nanoTime());
+            System.out.println("Interval estimator " + (TimeServices.nanoTime() - startTime) + " in:\n" +
                     estimator.toString());
+            if (i > 1) {
+                Assert.assertEquals("expected interval to be 2000000", 2000000, estimator.getEstimatedInterval(TimeServices.nanoTime()));
+            }
             for (int j = 0; j < 64; j++) {
-                estimator.recordInterval(System.nanoTime());
-                Thread.sleep(1);
+                TimeServices.moveTimeForwardMsec(2);
+                TimeUnit.NANOSECONDS.sleep(100000L); // let things propagate
+                estimator.recordInterval(TimeServices.nanoTime());
             }
         }
 

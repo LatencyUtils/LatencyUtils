@@ -5,6 +5,7 @@
 
 package org.LatencyUtils;
 
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -78,8 +79,10 @@ public class SimplePauseDetector extends PauseDetector {
     @Override
     public void shutdown() {
         stopThreadMask = 0xffffffffffffffffL;
+        for (SimplePauseDetectorThread detector : detectors) {
+            detector.interrupt();
+        }
         super.shutdown();
-        java.util.concurrent.locks.LockSupport.parkNanos(10 * sleepInterval);
     }
 
     class SimplePauseDetectorThread extends Thread {
@@ -106,7 +109,7 @@ public class SimplePauseDetector extends PauseDetector {
             long shortestObservedTimeAroundLoop = Long.MAX_VALUE;
             while ((stopThreadMask & threadMask) == 0) {
                 if (sleepInterval != 0) {
-                    java.util.concurrent.locks.LockSupport.parkNanos(sleepInterval);
+                    TimeServices.sleepNanos(sleepInterval);
                 }
 
                 // TEST FUNCTIONALITY: Spin as long as we are asked to stall:
@@ -115,14 +118,16 @@ public class SimplePauseDetector extends PauseDetector {
                 observedLasUpdateTime = consensusLatestTime.get();
                 // Volatile store above makes sure new now is measured after observedLasUpdateTime sample
                 now = TimeServices.nanoTime();
-                // Move consensus forward and act on delta:
-                if (consensusLatestTime.compareAndSet(observedLasUpdateTime, now)) {
-                    final long deltaTimeNs = now - observedLasUpdateTime;
 
-                    final long timeAroundLoop = now - prevNow;
-                    if (timeAroundLoop < shortestObservedTimeAroundLoop) {
-                        shortestObservedTimeAroundLoop = timeAroundLoop;
-                    }
+                final long timeAroundLoop = now - prevNow;
+                if (timeAroundLoop < shortestObservedTimeAroundLoop) {
+                    shortestObservedTimeAroundLoop = timeAroundLoop;
+                }
+
+                // Move consensus forward and act on delta:
+                if ((now > observedLasUpdateTime) &&
+                        (consensusLatestTime.compareAndSet(observedLasUpdateTime, now))) {
+                    final long deltaTimeNs = now - observedLasUpdateTime;
 
                     long hiccupTime = deltaTimeNs - shortestObservedTimeAroundLoop;
                     hiccupTime = (hiccupTime < 0) ? 0 : hiccupTime;
@@ -140,6 +145,9 @@ public class SimplePauseDetector extends PauseDetector {
                 }
                 prevNow = now;
             }
+            if (verbose) {
+                System.out.println("SimplePauseDetector thread " + threadNumber + " terminating...");
+            }
         }
     }
 
@@ -151,20 +159,30 @@ public class SimplePauseDetector extends PauseDetector {
      * @param threadNumberMask a mask designating which threads should be stalled.
      * @param stallLength stall length, in nanosecond units
      */
-    public void stallDetectorThreads(long threadNumberMask, long stallLength) {
+    public void stallDetectorThreads(long threadNumberMask, long stallLength) throws InterruptedException {
         long savedMask = stallTheadMask;
         stallTheadMask = threadNumberMask;
+
         long startTime = TimeServices.nanoTime();
         long endTime = startTime + stallLength;
-        long remainingTime = stallLength;
-
-        do {
-            remainingTime = endTime - TimeServices.nanoTime();
-            if (remainingTime > 1000000L) {
-                java.util.concurrent.locks.LockSupport.parkNanos(remainingTime);
-            }
-        } while (remainingTime > 0);
+        for (long remainingTime = stallLength;
+             remainingTime > 0;
+             remainingTime = endTime - TimeServices.nanoTime()) {
+            long timeDelta = Math.min(remainingTime, (pauseNotificationThreshold / 2));
+            TimeServices.moveTimeForward(timeDelta);
+            TimeUnit.NANOSECONDS.sleep(50000); // give things a chance to propagate.
+        }
 
         stallTheadMask = savedMask;
+    }
+
+    /**
+     * A test method that allows the caller to artificially move the consensus observed time forward
+     * without causing a pause to be detected as a result of the time skip. Useful for test programs
+     * that wish to use artificial time services.
+     * @param newConsensusTime
+     */
+    public void skipConsensusTimeTo(long newConsensusTime) {
+        consensusLatestTime.set(newConsensusTime);
     }
 }

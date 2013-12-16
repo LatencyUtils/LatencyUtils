@@ -11,6 +11,8 @@ import org.HdrHistogram.AtomicHistogram;
 import java.lang.ref.WeakReference;
 import java.util.Timer;
 import java.util.TimerTask;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLongFieldUpdater;
 
 /**
@@ -25,8 +27,9 @@ import java.util.concurrent.atomic.AtomicLongFieldUpdater;
  * based on that instance's estimated inter-recording intervalEndTimes.
  */
 public class LatencyStats {
-    private static PauseDetector defaultPauseDetector;
     private static Builder defaultBuilder = new Builder();
+    private static final TimeServices.ScheduledExecutor latencyStatsScheduledExecutor = new TimeServices.ScheduledExecutor();
+    private static PauseDetector defaultPauseDetector;
 
     // All times and time units are in nanoseconds
 
@@ -56,7 +59,6 @@ public class LatencyStats {
     private static final AtomicLongFieldUpdater<LatencyStats> recordingEndEpochUpdater =
             AtomicLongFieldUpdater.newUpdater(LatencyStats.class, "recordingEndEpoch");
 
-    private static final TimeServices.Timer latencyStatsTasksTimer = new TimeServices.Timer();
     private final PeriodicHistogramUpdateTask updateTask;
     private final PauseTracker pauseTracker;
 
@@ -276,6 +278,7 @@ public class LatencyStats {
     public synchronized void stop() {
         updateTask.stop();
         pauseTracker.stop();
+        latencyStatsScheduledExecutor.shutdown();
     }
 
     /**
@@ -466,27 +469,33 @@ public class LatencyStats {
     /**
      * PeriodicHistogramUpdateTask is used to collect interval and accumulated histograms with regular frequency:
      */
-    static class PeriodicHistogramUpdateTask extends TimerTask {
+    static class PeriodicHistogramUpdateTask implements Runnable {
         final WeakReference<LatencyStats> latencyStatsRef;
+        private boolean cancelled = false;
 
         PeriodicHistogramUpdateTask(final long histogramUpdateInterval, final LatencyStats latencyStats) {
             this.latencyStatsRef = new WeakReference<LatencyStats>(latencyStats);
             if (histogramUpdateInterval != 0) {
-                latencyStatsTasksTimer.scheduleAtFixedRate(this, 0, (histogramUpdateInterval / 1000000L));
+                latencyStatsScheduledExecutor.scheduleAtFixedRate(this, 0, histogramUpdateInterval, TimeUnit.NANOSECONDS);
             }
         }
 
         public void stop() {
-            this.cancel();
+            cancelled = true;
         }
 
         public void run() {
             final LatencyStats latencyStats = latencyStatsRef.get();
-            if (latencyStats != null) {
-                latencyStats.updateHistograms();
-            } else {
-                this.cancel();
+
+            if (latencyStats == null) {
+                stop();
             }
+
+            if (cancelled) {
+                throw new CancellationException("Task canceled");
+            }
+
+            latencyStats.updateHistograms();
         }
     }
 

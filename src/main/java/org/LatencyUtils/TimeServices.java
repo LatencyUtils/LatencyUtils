@@ -6,8 +6,7 @@
 package org.LatencyUtils;
 
 import java.util.Comparator;
-import java.util.TimerTask;
-import java.util.concurrent.PriorityBlockingQueue;
+import java.util.concurrent.*;
 
 /**
  * Provide an API for time-related service, such as getting the current time and waiting for
@@ -20,7 +19,6 @@ import java.util.concurrent.PriorityBlockingQueue;
  */
 public class TimeServices {
     static final boolean useActualTime;
-
 
     static long currentTime;
 
@@ -47,21 +45,29 @@ public class TimeServices {
         return currentTime/ 1000000;
     }
 
-    public static void sleepMsecs(long sleepTimeMsec) throws InterruptedException {
-        if (useActualTime) {
-            Thread.sleep(sleepTimeMsec);
+    public static void sleepMsecs(long sleepTimeMsec) {
+        try {
+            if (useActualTime) {
+                Thread.sleep(sleepTimeMsec);
+            } else {
+                waitUntilTime(currentTime + (sleepTimeMsec * 1000000L));
+            }
+        } catch (InterruptedException ex) {
         }
-        waitUntilTime(currentTime + (sleepTimeMsec * 1000000L));
     }
 
-    public static void sleepNanos(long sleepTimeNsec) throws InterruptedException {
-        if (useActualTime) {
-            java.util.concurrent.locks.LockSupport.parkNanos(sleepTimeNsec);
+    public static void sleepNanos(long sleepTimeNsec) {
+        try {
+            if (useActualTime) {
+                TimeUnit.NANOSECONDS.sleep(sleepTimeNsec);
+            } else {
+                waitUntilTime(currentTime + (sleepTimeNsec));
+            }
+        } catch (InterruptedException ex) {
         }
-        waitUntilTime(currentTime + (sleepTimeNsec));
     }
 
-    static void waitUntilTime(long timeToWakeAt) throws InterruptedException {
+    public static void waitUntilTime(long timeToWakeAt) throws InterruptedException {
         synchronized (timeUpdateMonitor) {
             while (timeToWakeAt > currentTime) {
                 timeUpdateMonitor.wait();
@@ -69,70 +75,96 @@ public class TimeServices {
         }
     }
 
-    public void setCurrentTime(long currentTime) {
-        if (useActualTime) {
-            throw new IllegalStateException("Can't set current time when (useActualTime != false)");
-        }
-        TimeServices.currentTime = currentTime;
-        synchronized (timeUpdateMonitor) {
-            timeUpdateMonitor.notifyAll();
-        }
+    public static void moveTimeForward(long timeDeltaNsec) throws InterruptedException {
+        setCurrentTime(currentTime + timeDeltaNsec);
     }
 
-    public static class Timer {
-        final java.util.Timer actualTimer;
-        final Thread internalThread;
-        PriorityBlockingQueue<TimerTaskEntry> taskEntries = new PriorityBlockingQueue<TimerTaskEntry>(10000, compareTimerTaskEntryByStartTime);
+    public static void moveTimeForwardMsec(long timeDeltaMsec) throws InterruptedException {
+        moveTimeForward(timeDeltaMsec * 1000000L);
+    }
 
-        public Timer() {
-            this(null, false);
+    public static void setCurrentTime(long newCurrentTime) throws InterruptedException {
+        if (newCurrentTime < nanoTime()) {
+            throw new IllegalStateException("Can't set current time to the past.");
         }
-
-        public Timer(String name) {
-            this(name, false);
-        }
-
-        public Timer(String name, boolean isDaemon) {
-            if (useActualTime) {
-                if (name != null) {
-                    actualTimer = new java.util.Timer(name, isDaemon);
-                } else {
-                    actualTimer = new java.util.Timer(isDaemon);
-                }
-                internalThread = null;
-                return;
+        if (useActualTime) {
+            while (newCurrentTime > nanoTime()) {
+                TimeUnit.NANOSECONDS.sleep(newCurrentTime - nanoTime());
             }
+            return;
+        }
+        while (currentTime < newCurrentTime) {
+            long timeDelta = Math.min((newCurrentTime - currentTime), 5000000L);
+            currentTime += timeDelta;
+            synchronized (timeUpdateMonitor) {
+                timeUpdateMonitor.notifyAll();
+                TimeUnit.NANOSECONDS.sleep(50000);
+            }
+        }
 
-            actualTimer = null;
-            if (name != null) {
-                internalThread = new Thread(name);
+    }
+
+    public static class ScheduledExecutor {
+        private final ScheduledThreadPoolExecutor actualExecutor;
+
+        final MyExecutorThread internalExecutorThread;
+        final PriorityBlockingQueue<RunnableTaskEntry> taskEntries;
+
+        ScheduledExecutor() {
+            if (useActualTime) {
+                actualExecutor = new ScheduledThreadPoolExecutor(1);
+                internalExecutorThread = null;
+                taskEntries = null;
             } else {
-                internalThread = new Thread();
+                actualExecutor = null;
+                taskEntries = new PriorityBlockingQueue<RunnableTaskEntry>(10000, compareRunnableTaskEntryByStartTime);
+                internalExecutorThread = new MyExecutorThread();
+                internalExecutorThread.setDaemon(true);
+                internalExecutorThread.start();
             }
-            internalThread.setDaemon(isDaemon);
         }
 
-        public void scheduleAtFixedRate(TimerTask timerTask, long delay, long period) {
+        public void scheduleAtFixedRate(Runnable command, long initialDelay, long period, TimeUnit unit) {
             if (useActualTime) {
-                actualTimer.scheduleAtFixedRate(timerTask, delay, period);
+                actualExecutor.scheduleAtFixedRate(command, initialDelay, period, unit);
                 return;
             }
-                TimerTaskEntry entry = new TimerTaskEntry(currentTime + delay, timerTask, period, true);
+
+            long startTimeNsec = currentTime + TimeUnit.NANOSECONDS.convert(initialDelay, unit);
+            long periodNsec = TimeUnit.NANOSECONDS.convert(period, unit);
+            RunnableTaskEntry entry = new RunnableTaskEntry(command, startTimeNsec, periodNsec, true /* fixed rate */);
             synchronized (timeUpdateMonitor) {
                 taskEntries.add(entry);
-                notifyAll();
+                timeUpdateMonitor.notifyAll();
             }
         }
 
+        public void shutdown() {
+            if (useActualTime) {
+                actualExecutor.shutdownNow();
+                return;
+            }
+            internalExecutorThread.terminate();
+        }
 
-        private class TimerThread extends Thread {
+        private class MyExecutorThread extends Thread {
+            volatile boolean doRun = true;
+
+            void terminate() {
+                synchronized (timeUpdateMonitor) {
+                    doRun = false;
+                    timeUpdateMonitor.notifyAll();
+                }
+            }
+
             public void run() {
                 try {
-                    while (true) {
+                    while (doRun) {
                         synchronized (timeUpdateMonitor) {
-                            while (taskEntries.peek().getStartTime() < currentTime) {
-                                TimerTaskEntry entry = taskEntries.poll();
-                                entry.getTimerTask().run();
+                            for (RunnableTaskEntry entry = taskEntries.peek();
+                                 ((entry != null) && (entry.getStartTime() < currentTime));
+                                 entry = taskEntries.peek()) {
+                                entry.getCommand().run();
                                 if (entry.shouldReschedule()) {
                                     entry.setNewStartTime(currentTime);
                                     taskEntries.add(entry);
@@ -142,62 +174,61 @@ public class TimeServices {
                         }
                     }
                 } catch (InterruptedException ex) {
-
+                } catch (CancellationException ex) {
                 }
             }
         }
 
-    }
+        private static class RunnableTaskEntry {
+            long startTime;
+            Runnable command;
+            long period;
+            long initialStartTime;
+            long executionCount;
+            boolean fixedRate;
 
-    private static class TimerTaskEntry {
-        long startTime;
-        TimerTask timerTask;
-        long period;
-        long initialStartTime;
-        long executionCount;
-        boolean fixedRate;
-
-        TimerTaskEntry(long startTime, TimerTask timerTask, long period, boolean fixedRate) {
-            this.initialStartTime = startTime;
-            this.startTime = startTime;
-            this.timerTask = timerTask;
-            this.period = period;
-            this.fixedRate = fixedRate;
-        }
-
-        boolean shouldReschedule() {
-            return (period != 0);
-        }
-
-        public long getStartTime() {
-            return startTime;
-        }
-
-        public TimerTask getTimerTask() {
-            return timerTask;
-        }
-
-        public void setNewStartTime(long timeNow) {
-            if (period == 0) {
-                throw new IllegalStateException("should nto try to reschedule an entry that has no interval or rare");
-            }
-            if (!fixedRate) {
-                startTime = timeNow + period;
-            } else {
-                executionCount++;
-                startTime = initialStartTime + (executionCount * period);
+            RunnableTaskEntry(Runnable command, long startTimeNsec, long periodNsec, boolean fixedRate) {
+                this.command = command;
+                this.startTime = startTimeNsec;
+                this.initialStartTime = startTimeNsec;
+                this.period = periodNsec;
+                this.fixedRate = fixedRate;
             }
 
+            boolean shouldReschedule() {
+                return (period != 0);
+            }
+
+            public long getStartTime() {
+                return startTime;
+            }
+
+            public Runnable getCommand() {
+                return command;
+            }
+
+            public void setNewStartTime(long timeNow) {
+                if (period == 0) {
+                    throw new IllegalStateException("should nto try to reschedule an entry that has no interval or rare");
+                }
+                if (!fixedRate) {
+                    startTime = timeNow + period;
+                } else {
+                    executionCount++;
+                    startTime = initialStartTime + (executionCount * period);
+                }
+
+            }
         }
-    }
 
-    private static CompareTimerTaskEntryByStartTime compareTimerTaskEntryByStartTime = new CompareTimerTaskEntryByStartTime();
+        private static CompareRunnableTaskEntryByStartTime compareRunnableTaskEntryByStartTime = new CompareRunnableTaskEntryByStartTime();
 
-    static class CompareTimerTaskEntryByStartTime implements Comparator<TimerTaskEntry> {
-        public int compare(TimerTaskEntry r1, TimerTaskEntry r2) {
-            long t1 = r1.startTime;
-            long t2 = r2.startTime;
-            return (t1 > t2) ? 1 : ((t1 < t2) ? -1 : 0);
+        static class CompareRunnableTaskEntryByStartTime implements Comparator<RunnableTaskEntry> {
+            public int compare(RunnableTaskEntry r1, RunnableTaskEntry r2) {
+                long t1 = r1.startTime;
+                long t2 = r2.startTime;
+                return (t1 > t2) ? 1 : ((t1 < t2) ? -1 : 0);
+            }
         }
     }
 }

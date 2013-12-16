@@ -6,6 +6,7 @@
 package org.LatencyUtils;
 
 import java.lang.ref.WeakReference;
+import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicLongArray;
 
 /**
@@ -32,7 +33,7 @@ import java.util.concurrent.atomic.AtomicLongArray;
  */
 
 public class TimeCappedMovingAverageIntervalEstimator extends MovingAverageIntervalEstimator {
-    final long reportingTimes[];
+//    final long reportingTimes[];
     final long baseTimeCap;
     final PauseTracker pauseTracker;
     long timeCap;
@@ -66,7 +67,6 @@ public class TimeCappedMovingAverageIntervalEstimator extends MovingAverageInter
      */
     public TimeCappedMovingAverageIntervalEstimator(final int requestedWindowLength, final long timeCap, final PauseDetector pauseDetector) {
         super(requestedWindowLength);
-        reportingTimes = new long[windowLength];
         this.baseTimeCap = timeCap;
         this.timeCap = timeCap;
         if (pauseDetector != null) {
@@ -86,7 +86,6 @@ public class TimeCappedMovingAverageIntervalEstimator extends MovingAverageInter
     @Override
     public void recordInterval(long when) {
         int position = super.recordIntervalAndReturnWindowPosition(when);
-        reportingTimes[position] = when;
     }
 
     /**
@@ -162,7 +161,11 @@ public class TimeCappedMovingAverageIntervalEstimator extends MovingAverageInter
         long totalPauseTimeInWindow = timeCap - baseTimeCap;
         int positionDelta = (windowLength - numberOfWindowPositionsOutsideOfTimeCap) - 1;
 
-        long averageInterval = (windowTimeSpan - totalPauseTimeInWindow)  / positionDelta;
+        long averageInterval = Long.MAX_VALUE;
+
+        if (positionDelta > 0) {
+            averageInterval = (windowTimeSpan - totalPauseTimeInWindow)  / positionDelta;
+        }
 
         return "IntervalEstimator: \n" +
                 "Estimated Interval: " + getEstimatedInterval(when) + " (calculated at time " + when + ")\n" +
@@ -219,19 +222,31 @@ public class TimeCappedMovingAverageIntervalEstimator extends MovingAverageInter
         int currentPosition = getCurrentPosition();
         long timeCapStartTime = when - timeCap;
 
-        int earliestQualifyingWindowPosition = currentPosition;
-        // search for first position that falls within the time cap:
-        // TODO: use binary search instead of linear walk:
-        int numberOfWindowPositionsOutsideOfTimeCap = 0;
-        while (intervalEndTimes[earliestQualifyingWindowPosition] < timeCapStartTime) {
-            numberOfWindowPositionsOutsideOfTimeCap++;
-            earliestQualifyingWindowPosition = (int) ((earliestQualifyingWindowPosition + 1) & windowMask);
-            if (earliestQualifyingWindowPosition == currentPosition) {
-                break;
-            }
+        // The common case will have a full window:
+        if (intervalEndTimes[currentPosition] >= timeCapStartTime) {
+            return 0;
         }
 
-        return numberOfWindowPositionsOutsideOfTimeCap;
+        // Binary search for a non-zero numberOfWindowPositionsOutsideOfTimeCap:
+        // Start at a position half way to the end:
+
+        int lowOffset = 0;
+        int highOffset = windowLength;
+        while (lowOffset < highOffset) {
+            int currentGuessAtFirstQualifyingIndexOffset = (lowOffset + highOffset) >>> 1;
+            int index = (currentPosition + currentGuessAtFirstQualifyingIndexOffset) & windowMask;
+
+            long guessValue = intervalEndTimes[index];
+
+            if (guessValue < timeCapStartTime) {
+                // guess position is still outside of qualifying time range
+                lowOffset = currentGuessAtFirstQualifyingIndexOffset + 1;
+            } else {
+                // guess position is inside qualifying time range
+                highOffset = currentGuessAtFirstQualifyingIndexOffset;
+            }
+        }
+        return lowOffset;  // value not found.
     }
 
     /**

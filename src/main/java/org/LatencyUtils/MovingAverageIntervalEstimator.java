@@ -16,7 +16,7 @@ public class MovingAverageIntervalEstimator extends IntervalEstimator {
     final long intervalEndTimes[];
     final int windowMagnitude;
     final int windowLength;
-    final long windowMask;
+    final int windowMask;
     AtomicLong count = new AtomicLong(0);
     volatile long forcedOrderingHelper;
 
@@ -31,6 +31,9 @@ public class MovingAverageIntervalEstimator extends IntervalEstimator {
         this.windowLength = (int) Math.pow(2, windowMagnitude);
         this.windowMask = windowLength - 1;
         this.intervalEndTimes = new long[this.windowLength];
+        for (int i = 0; i < intervalEndTimes.length; i++) {
+            intervalEndTimes[i] = Long.MIN_VALUE;
+        }
     }
 
     /**
