@@ -186,7 +186,6 @@ public class TimeCappedMovingAverageIntervalEstimatorTest {
 
         System.out.println("\nTesting Interval Estimator with sleeps:\n");
         long startTime = TimeServices.nanoTime();
-        pauseDetector.recordPause(1000, startTime);
         for (int i = 0; i < 5; i++) {
             estimator.getEstimatedInterval(TimeServices.nanoTime());
             System.out.println("Interval estimator " + (TimeServices.nanoTime() - startTime) + " in:\n" +
