@@ -25,7 +25,7 @@ public class SimplePauseDetector extends PauseDetector {
     final long sleepInterval;
     final long pauseNotificationThreshold;
     final int numberOfDetectorThreads;
-    final boolean verbose;
+    boolean verbose;
     final AtomicLong consensusLatestTime = new AtomicLong();
 
     volatile long stallTheadMask = 0;
@@ -73,6 +73,10 @@ public class SimplePauseDetector extends PauseDetector {
                 DEFAULT_NumberOfDetectorThreads, DEFAULT_Verbose);
     }
 
+    public void setVerbose(boolean verbose) {
+        this.verbose = verbose;
+    }
+
     /**
      * Shut down the pause detector operation and terminate it's threads.
      */
@@ -101,48 +105,51 @@ public class SimplePauseDetector extends PauseDetector {
         }
 
         public void run() {
+            long shortestObservedTimeAroundLoop = Long.MAX_VALUE;
+
             observedLasUpdateTime = consensusLatestTime.get();
             long now = TimeServices.nanoTime();
             long prevNow = now;
             consensusLatestTime.compareAndSet(observedLasUpdateTime, now);
 
-            long shortestObservedTimeAroundLoop = Long.MAX_VALUE;
             while ((stopThreadMask & threadMask) == 0) {
                 if (sleepInterval != 0) {
                     TimeServices.sleepNanos(sleepInterval);
                 }
 
-                // TEST FUNCTIONALITY: Spin as long as we are asked to stall:
+                // This is ***TEST FUNCTIONALITY***: Spin as long as we are externally asked to stall:
                 while ((stallTheadMask & threadMask) != 0);
 
                 observedLasUpdateTime = consensusLatestTime.get();
-                // Volatile store above makes sure new now is measured after observedLasUpdateTime sample
+                // Volatile store above makes sure new "now" is measured after observedLasUpdateTime sample
                 now = TimeServices.nanoTime();
 
-                final long timeAroundLoop = now - prevNow;
-                if (timeAroundLoop < shortestObservedTimeAroundLoop) {
-                    shortestObservedTimeAroundLoop = timeAroundLoop;
-                }
+                // Track shortest time around loop:
+                shortestObservedTimeAroundLoop = Math.min(now - prevNow, shortestObservedTimeAroundLoop);
 
-                // Move consensus forward and act on delta:
-                if ((now > observedLasUpdateTime) &&
-                        (consensusLatestTime.compareAndSet(observedLasUpdateTime, now))) {
-                    final long deltaTimeNs = now - observedLasUpdateTime;
+                // Update consensus time as long as it is is the past:
+                while (now > observedLasUpdateTime) {
+                    if (consensusLatestTime.compareAndSet(observedLasUpdateTime, now)) {
+                        // Successfully and atomically moved consensus time forward. Act on the known delta:
+                        final long deltaTimeNs = now - observedLasUpdateTime;
 
-                    long hiccupTime = deltaTimeNs - shortestObservedTimeAroundLoop;
-                    hiccupTime = (hiccupTime < 0) ? 0 : hiccupTime;
+                        // Calculate hiccup time (accounting for known time around loop):
+                        long hiccupTime = Math.max(deltaTimeNs - shortestObservedTimeAroundLoop, 0);
 
-                    if (hiccupTime > pauseNotificationThreshold) {
-                        if (verbose) {
-                            System.out.println("SimplePauseDetector thread " + threadNumber +
-                                    ": sending pause notification message: pause of " + hiccupTime +
-                                    " nsec detected at nanoTime: " + now +
-                                    " (sleepInterval = " + sleepInterval +
-                                    " , shortest time around loop = " + shortestObservedTimeAroundLoop + ")");
+                        if (hiccupTime > pauseNotificationThreshold) {
+                            if (verbose) {
+                                System.out.println("SimplePauseDetector thread " + threadNumber +
+                                        ": sending pause notification message: pause of " + hiccupTime +
+                                        " nsec detected at nanoTime: " + now);
+                            }
+                            notifyListeners(hiccupTime, now);
                         }
-                        notifyListeners(hiccupTime, now);
+                    } else {
+                        // Failed to atomically move consensus time forward. Try again with current value:
+                        observedLasUpdateTime = consensusLatestTime.get();
                     }
                 }
+
                 prevNow = now;
             }
             if (verbose) {
