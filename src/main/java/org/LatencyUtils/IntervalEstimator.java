@@ -6,7 +6,7 @@
 package org.LatencyUtils;
 
 /**
- * IntervalEstimator is used to estimate intervalEndTimes, potentially based on observed intervalEndTimes recorded in it.
+ * IntervalEstimator is used to estimate intervals, potentially based on observed intervals recorded in it.
  */
 public abstract class IntervalEstimator {
 

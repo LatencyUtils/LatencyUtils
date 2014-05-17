@@ -47,7 +47,7 @@ public abstract class PauseDetector extends Thread {
      * Listener will be added to either the normal priority or high priority listeners list,
      * @param listener Listener to add
      * @param isHighPriority If true, listener will be added to high priority list. If false, listener will
-     *                     be added to low priority list.
+     *                     be added to the normal priority list.
      */
     public synchronized void addListener(PauseDetectorListener listener, boolean isHighPriority) {
         messages.add(new ChangeListenersRequest(

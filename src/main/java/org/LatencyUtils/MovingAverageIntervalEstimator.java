@@ -8,8 +8,8 @@ package org.LatencyUtils;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * A moving average interval estimator. Estimates intervalEndTimes by averaging the interval values recorded in a
- * moving window. Will only provide average estimate once enough intervalEndTimes have been collected to fill the
+ * A moving average interval estimator. Estimates intervals by averaging the interval values recorded in a
+ * moving window. Will only provide average estimate once enough intervals have been collected to fill the
  * window, and will return an impossibly long interval estimate until then.
  */
 public class MovingAverageIntervalEstimator extends IntervalEstimator {

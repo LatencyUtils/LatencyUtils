@@ -9,6 +9,33 @@
  * <p>
  * The LatencyUtils package includes useful utilities for tracking latencies. Especially in common in-process
  * recording scenarios, which can exhibit significant coordinated omission sensitivity without proper handling.
+ * {@link org.LatencyUtils.LatencyStats} instances are used to track recorded latencies in the common
+ * use case the often follow this pattern:
+ *
+ * <code>
+ * <pre>
+ * LatencyStats myOpStats = new LatencyStats();
+ * ...
+ *
+ * // During normal operation, record all operation latencies into a LatencyStats instance:
+ *
+ * long startTime = System.nanoTime();
+ * // Perform operation:
+ * doMyOperation(...);
+ * // Record operation latency:
+ * myOpStats(System.nanoTime() - startTime);
+ * ...
+ *
+ * // Later, report on stats collected:
+ * myOpStats..forceIntervalSample();
+ *
+ * Histogram intervalHistogram = myOpStats.getIntervalHistogram();
+ *
+ * intervalHistogram.getHistogramData().outputPercentileDistribution(System.out, 1000000.0);
+ *
+ * </pre>
+ * </code>
+ *
  * <p>
  * <h3>The problem</h3>
  * Latency tracking of in-process operations usually consists simple time sampling around a tracked operation.

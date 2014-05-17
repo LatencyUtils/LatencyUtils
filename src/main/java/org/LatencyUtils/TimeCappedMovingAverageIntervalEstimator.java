@@ -11,23 +11,23 @@ import java.util.concurrent.atomic.AtomicLongArray;
 
 /**
  * A moving average interval estimator with a cap on the time window length that the moving window must completely
- * fit in in order to provide estimated intervalEndTimes.
- *
- * A time capped interval estimator is useful for conservatively estimating intervalEndTimes in environments where rates
- * can change dramatically and semi=statically. For example, the rate of market rate updates seen just before market
+ * fit in in order to provide estimated time intervals.
+ * <p>
+ * A time capped interval estimator is useful for conservatively estimating time intervals in environments where rates
+ * can change dramatically and semi-statically. For example, the rate of market rate updates seen just before market
  * close can be very high, dropping dramatically at market close and staying low thereafter. A non-time-capped
- * moving average estimator will project short estimated intervalEndTimes long after market close, while a time capped
- * interval estimator will avoid carrying the small intervalEndTimes beyond the time cap.
- *
- * TimeCappedMovingAverageIntervalEstimator Estimates intervalEndTimes by averaging the interval values recorded in a
- * moving window, but if any of the results in the moving window occur outside of the capped time span requested, only
- * the results that fall within the time cap will be considered.
+ * moving average estimator will project short estimated time interval long after market close, while a time capped
+ * interval estimator will avoid carrying the small time interval beyond the time cap.
+ * <p>
+ * TimeCappedMovingAverageIntervalEstimator estimates time intervals by averaging the time interval values recorded
+ * in a moving window, but if any of the results in the moving window occur outside of the capped time span
+ * requested, only the results that fall within the time cap will be considered.
  * <p>
  * TimeCappedMovingAverageIntervalEstimator can react to pauses reported by an optional PauseDetector by temporarily
  * expanding the time cap to include each pause length, until such a time that the original time cap no longer overlaps
- * with the pause. It will also subtract the pause length form intervalEndTimes measured across a detected pause. Providing a
+ * with the pause. It will also subtract the pause length from interval times measured across a detected pause. Providing a
  * pause detector is highly recommended, as without one the time cap can cause over-conservative interval estimation
- * (i.e. estimated intervalEndTimes that are much higher than needed) in the presence of pauses.
+ * (i.e. estimated interval times that are much higher than needed) in the presence of pauses.
  * <p>
  * All times and time units are in nanoseconds
  */
