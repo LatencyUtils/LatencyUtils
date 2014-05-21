@@ -85,7 +85,7 @@ public class TimeCappedMovingAverageIntervalEstimator extends MovingAverageInter
      */
     @Override
     public void recordInterval(long when) {
-        int position = super.recordIntervalAndReturnWindowPosition(when);
+        super.recordIntervalAndReturnWindowPosition(when);
     }
 
     /**
@@ -97,11 +97,38 @@ public class TimeCappedMovingAverageIntervalEstimator extends MovingAverageInter
 
         eliminateStalePauses(when);
 
+        long sampledCount = count.get();
+
+        if (sampledCount < windowLength) {
+            return Long.MAX_VALUE;
+        }
+
+        long sampledCountPre;
+        long windowTimeSpan;
+
         int numberOfWindowPositionsOutsideOfTimeCap = determineNumberOfWindowPositionsOutsideOfTimeCap(when);
 
-        long windowStartTime = determineEarliestQualifyingTimeInWindow(when);
+        do {
+            sampledCountPre = sampledCount;
 
-        long windowTimeSpan = when - windowStartTime;
+            int latestWindowPosition = (int) ((sampledCount + windowLength - 1) & windowMask);
+            long windowStartTime = determineEarliestQualifyingTimeInWindow(when);
+            if (windowStartTime == Long.MAX_VALUE) {
+                // When no qualifying time is found
+                return Long.MAX_VALUE;
+            }
+            long windowEndTime = Math.max(intervalEndTimes[latestWindowPosition], when);
+            windowTimeSpan = windowEndTime - windowStartTime;
+
+            sampledCount = count.get();
+
+            // Spin until we can have a stable count read during our calculation and the end time
+            // represents an actually updated value (on a race where the count was updated and the
+            // end time was not yet updated, the end time would be behind the start time, and
+            // the time span would be negative).
+
+        } while ((sampledCount != sampledCountPre) || (windowTimeSpan < 0));
+
         long totalPauseTimeInWindow = timeCap - baseTimeCap;
         int positionDelta = (windowLength - numberOfWindowPositionsOutsideOfTimeCap) - 1;
 

@@ -18,7 +18,6 @@ public class MovingAverageIntervalEstimator extends IntervalEstimator {
     final int windowLength;
     final int windowMask;
     AtomicLong count = new AtomicLong(0);
-    volatile long forcedOrderingHelper;
 
     /**
      *
@@ -60,20 +59,41 @@ public class MovingAverageIntervalEstimator extends IntervalEstimator {
      */
     @Override
     public long getEstimatedInterval(long when) {
-        long averageInterval;
         long sampledCount = count.get();
+
         if (sampledCount < windowLength) {
             return Long.MAX_VALUE;
-        } else {
+        }
+
+        long sampledCountPre;
+        long windowTimeSpan;
+
+        do {
+            sampledCountPre = sampledCount;
+
             int earliestWindowPosition = (int) (sampledCount & windowMask);
             int latestWindowPosition = (int) ((sampledCount + windowLength - 1) & windowMask);
             long windowStartTime = intervalEndTimes[earliestWindowPosition];
-            forcedOrderingHelper = 0; // here to force ordering between reading of start and end times
-            long windowEndTime = intervalEndTimes[latestWindowPosition];
-            long windowTimeSpan = windowEndTime - windowStartTime;
-            averageInterval = windowTimeSpan / (windowLength - 1);
-        }
-        return averageInterval;
+            long windowEndTime = Math.max(intervalEndTimes[latestWindowPosition], when);
+            windowTimeSpan = windowEndTime - windowStartTime;
+
+            sampledCount = count.get();
+
+            // Spin until we can have a stable count read during our calculation and the end time
+            // represents an actually updated value (on a race where the count was updated and the
+            // end time was not yet updated, the end time would be behind the start time, and
+            // the time span would be negative).
+
+        } while ((sampledCount != sampledCountPre) || (windowTimeSpan < 0));
+
+        long averageInterval = windowTimeSpan / (windowLength - 1);
+
+        // windowTimeSpan and averageInterval could theoretically be 0 if the entire window
+        // was filled with the exact same nanotime sample. While that would truly indicate a
+        // 0 interval within the window, we want to keep a minbar for the interval, as a 0 interval
+        // can probably cause all sorts of interesting infinite loops in receiving logic.
+
+        return Math.max(averageInterval, 1); // do not return a 0 interval estimate
     }
 
     int getCurrentPosition() {

@@ -79,7 +79,7 @@ public class LatencyStats {
     private final long highestTrackableLatency;
     private final int numberOfSignificantValueDigits;
 
-    private AtomicHistogram currentRecordingHistogram;
+    private volatile AtomicHistogram currentRecordingHistogram;
     private Histogram currentPauseCorrectionsHistogram;
 
     private AtomicHistogram intervalRawDataHistogram;

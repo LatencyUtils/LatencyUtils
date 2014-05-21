@@ -190,7 +190,7 @@ public class TimeCappedMovingAverageIntervalEstimatorTest {
             estimator.getEstimatedInterval(TimeServices.nanoTime());
             System.out.println("Interval estimator " + (TimeServices.nanoTime() - startTime) + " in:\n" +
                     estimator.toString());
-            if (i > 0) {
+            if (i > 1) {
                 Assert.assertEquals("expected interval to be 1000000", 1000000, estimator.getEstimatedInterval(TimeServices.nanoTime()));
             }
             for (int j = 0; j < 64; j++) {
