@@ -8,6 +8,7 @@ in common in-process recording scenarios, which can exhibit significant coordina
 omission sensitivity without proper handling. LatencyStats instances are used to
 track recorded latencies in the common use case the often follow this pattern:
 
+```Java
  LatencyStats myOpStats = new LatencyStats();
  ...
 
@@ -26,6 +27,7 @@ track recorded latencies in the common use case the often follow this pattern:
  Histogram intervalHistogram = myOpStats.getIntervalHistogram();
 
  intervalHistogram.getHistogramData().outputPercentileDistribution(System.out, 1000000.0);
+```
 
 The problem
 -------------
