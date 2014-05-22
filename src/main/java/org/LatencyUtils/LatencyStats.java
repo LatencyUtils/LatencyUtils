@@ -197,6 +197,10 @@ public class LatencyStats {
 
         // Create PauseTracker and register with pauseDetector:
         pauseTracker = new PauseTracker(this.pauseDetector, this);
+
+        long now = System.currentTimeMillis();
+        currentRecordingHistogram.setStartTimeStamp(now);
+        currentPauseCorrectionsHistogram.setStartTimeStamp(now);
     }
 
     /**
@@ -292,9 +296,19 @@ public class LatencyStats {
      */
     public synchronized Histogram getUncorrectedIntervalHistogram() {
         Histogram intervalHistogram = new Histogram(lowestTrackableLatency, highestTrackableLatency, numberOfSignificantValueDigits);
-        intervalRawDataHistogram.copyInto(intervalHistogram);
+        getUncorrectedIntervalHistogramInto(intervalHistogram);
         return intervalHistogram;
     }
+
+    /**
+     * Place a copy of the  values of the latest uncorrected interval latency histogram (the one
+     * sampled at the last call to {@link #forceIntervalSample}) into the given histogram
+     * @param targetHistogram the histogram into which the interval histogram's data should be copied
+     */
+    public synchronized void getUncorrectedIntervalHistogramInto(Histogram targetHistogram) {
+        intervalRawDataHistogram.copyInto(targetHistogram);
+    }
+
 
     /**
      * Force an update of the interval and accumulated histograms data from the current recorded data.
