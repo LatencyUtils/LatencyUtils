@@ -22,7 +22,12 @@ import java.util.concurrent.TimeUnit;
  * latencyStats will detect the pause and compensate for it, which will be evident
  * in the reporting output.
  * <p>
- * The histogram log output in this demo is in standard HdrHistogram histogram log
+ * This demo will output two log files: one for the "normal" pause-corrected output
+ * (the one you should probably use by default), and one for the uncorrected output.
+ * It demonstrates how the two result sets can be logged side by side, for later
+ * comparison, e.g. for highlighting the effects of coordinated omission.
+ * <p>
+ * The histogram log outputs in this demo are in standard HdrHistogram histogram log
  * form. It can be post-processed by any tools that parse such logs, e.g. to extract
  * an accumulated histogram and it's overall percentile distribution for any time
  * range in the log, and/or to summarize percentile on an interval basis.
@@ -31,7 +36,7 @@ import java.util.concurrent.TimeUnit;
  * and the HistogramLogProcessor.java class in jHiccup or HdrHistogram should do the
  * same.
  */
-public class LatencyLoggingDemo {
+public class LatencyComparativeLoggingDemo {
     static final long REPORTING_INTERVAL = 2 * 1000 * 1000 * 1000L; // report every 2 sec
     static final long RECORDING_INTERVAL = 5 * 1000 * 1000L; // record every 5 msec, @~200/sec
     static final long OPERATION_LATENCY = 1000 * 1000L; // 1 msec
@@ -39,6 +44,7 @@ public class LatencyLoggingDemo {
     static final String defaultLogFileName = "latencyLoggingDemo.%date.%pid.hlog";
     static final String defaultUncorrectedLogFileName = "latencyLoggingDemoUncorrected.%date.%pid.hlog";
     static HistogramLogWriter histogramLogWriter;
+    static HistogramLogWriter uncorrectedHistogramLogWriter;
     static long reportingStartTime;
 
     // Note that this will create and launch a default pause detector since one has not been set elsewhere:
@@ -73,6 +79,7 @@ public class LatencyLoggingDemo {
         // parameters to match latencyStats settings..
 
         Histogram intervalHistogram = latencyStats.getIntervalHistogram();
+        Histogram uncorrectedIntervalHistogram = latencyStats.getUncorrectedIntervalHistogram();
 
         @Override
         public void run() {
@@ -82,14 +89,19 @@ public class LatencyLoggingDemo {
 
             // Get the histogram (without allocating a new one each time):
             latencyStats.getIntervalHistogramInto(intervalHistogram);
+            latencyStats.getUncorrectedIntervalHistogramInto(uncorrectedIntervalHistogram);
 
             // Adjust start and end timestamps so they show offset from reportingStartTime
             // (by convention, they are set to indicate milliseconds form the epoch)
             intervalHistogram.setStartTimeStamp(intervalHistogram.getStartTimeStamp() - reportingStartTime);
             intervalHistogram.setEndTimeStamp(intervalHistogram.getEndTimeStamp() - reportingStartTime);
 
+            uncorrectedIntervalHistogram.setStartTimeStamp(uncorrectedIntervalHistogram.getStartTimeStamp() - reportingStartTime);
+            uncorrectedIntervalHistogram.setEndTimeStamp(uncorrectedIntervalHistogram.getEndTimeStamp() - reportingStartTime);
+
             // Report:
             histogramLogWriter.outputIntervalHistogram(intervalHistogram);
+            uncorrectedHistogramLogWriter.outputIntervalHistogram(uncorrectedIntervalHistogram);
         }
     }
 
@@ -121,12 +133,19 @@ public class LatencyLoggingDemo {
         histogramLogWriter.outputComment("[Logged with LatencyLoggingDemo]");
         histogramLogWriter.outputLogFormatVersion();
 
+        uncorrectedHistogramLogWriter = new HistogramLogWriter(fillInPidAndDate(defaultUncorrectedLogFileName));
+        uncorrectedHistogramLogWriter.outputComment("[Logged with LatencyLoggingDemo (Raw)]");
+        uncorrectedHistogramLogWriter.outputLogFormatVersion();
+
         reportingStartTime = System.currentTimeMillis();
         // Force an interval sample right at the reporting start time (to start samples here):
         latencyStats.forceIntervalSample();
 
         histogramLogWriter.outputStartTime(reportingStartTime);
         histogramLogWriter.outputLegend();
+
+        uncorrectedHistogramLogWriter.outputStartTime(reportingStartTime);
+        uncorrectedHistogramLogWriter.outputLegend();
 
         // Regularly report on observations into log file:
         executor.scheduleWithFixedDelay(new Reporter(), REPORTING_INTERVAL, REPORTING_INTERVAL, TimeUnit.NANOSECONDS);

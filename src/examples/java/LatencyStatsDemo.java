@@ -20,7 +20,7 @@ import java.util.concurrent.TimeUnit;
  */
 public class LatencyStatsDemo {
     static final long REPORTING_INTERVAL = 2 * 1000 * 1000 * 1000L; // report every 2 sec
-    static final long RECORDING_INTERVAL = 50 * 1000 * 1000L; // record every 50 msec, @~20/sec
+    static final long RECORDING_INTERVAL = 5 * 1000 * 1000L; // record every 5 msec, @~200/sec
     static final long OPERATION_LATENCY = 1000 * 1000L; // 1 msec
 
     // Note that this will create and launch a default pause detector since one has not been set elsewhere:
