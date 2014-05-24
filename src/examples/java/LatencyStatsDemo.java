@@ -70,9 +70,9 @@ public class LatencyStatsDemo {
             // Report:
             System.out.println("\n\n--------------\n# Current Time: " + new Date());
             System.out.println("\nInterval Histogram : \n");
-            intervalHistogram.getHistogramData().outputPercentileDistribution(System.out, 1000000.0);
+            intervalHistogram.outputPercentileDistribution(System.out, 1000000.0);
             System.out.println("\nAccumulated Histogram : \n");
-            accumulatedHistogram.getHistogramData().outputPercentileDistribution(System.out, 1000000.0);
+            accumulatedHistogram.outputPercentileDistribution(System.out, 1000000.0);
         }
     }
 
