@@ -9,7 +9,12 @@ import org.HdrHistogram.Histogram;
 import org.junit.Assert;
 import org.junit.Test;
 
+import java.lang.reflect.Field;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 
 /**
@@ -240,6 +245,81 @@ public class LatencyStatsTest {
         latencyStats.stop();
 
         pauseDetector.shutdown();
+    }
+
+    @Test
+    public void testIntervalSampleDeadlock() throws Exception {
+
+        SimplePauseDetector pauseDetector = new SimplePauseDetector(1000000L /* 1 msec sleep */,
+                10000000L /* 10 msec reporting threshold */, 3 /* thread count */, true /* verbose */);
+
+        LatencyStats.setDefaultPauseDetector(pauseDetector);
+
+        final LatencyStats latencyStats = new LatencyStats();
+
+        pauseDetector.skipConsensusTimeTo(TimeServices.nanoTime() + 115 * MSEC);
+
+        TimeServices.moveTimeForward(5000L);
+        TimeUnit.NANOSECONDS.sleep(1 * MSEC); // Make sure things have some time to propagate
+        TimeServices.moveTimeForward(1000000L);
+        TimeUnit.NANOSECONDS.sleep(1 * MSEC); // Make sure things have some time to propagate
+        TimeServices.moveTimeForward(2000000L);
+        TimeUnit.NANOSECONDS.sleep(1 * MSEC); // Make sure things have some time to propagate
+        TimeServices.moveTimeForward(110000000L);
+        TimeUnit.NANOSECONDS.sleep(1 * MSEC); // Make sure things have some time to propagate
+
+        try {
+
+            TimeUnit.NANOSECONDS.sleep(10 * MSEC); // Make sure things have some time to propagate
+
+            long startTime = TimeServices.nanoTime();
+            try {
+                latencyStats.recordLatency(Long.MAX_VALUE);
+            } catch (java.lang.IndexOutOfBoundsException e) {
+                //Suppress, because this is what we expect
+            }
+
+            TimeUnit.NANOSECONDS.sleep(1 * MSEC); // Make sure things have some time to propagate
+
+            ExecutorService executorService = Executors.newFixedThreadPool(1);
+            Future<Boolean> future = executorService.submit(
+                new Runnable() {
+                    @Override
+                    public void run() {
+                        System.out.println("\nForcing Interval Update; may hang forever:\n");
+                        latencyStats.forceIntervalSample();
+                        System.out.println("\nCompleted forcing interval sample\n");
+                    }
+                },
+                Boolean.TRUE
+            );
+
+            try {
+                Boolean response = future.get(5, TimeUnit.SECONDS);
+                Assert.assertEquals(Boolean.TRUE, response);
+            } catch (TimeoutException e) {
+                System.err.println("\nFuture timed out.\n");
+                System.out.println("\nMaking sure the thread dies.\n");
+                try {
+                    Field f = LatencyStats.class.getDeclaredField("recordingEndEpoch");
+                    f.setAccessible(true);
+                    f.set(latencyStats, (Long)f.get(latencyStats) + 1);
+                    System.out.println(":" + future.get(5, TimeUnit.SECONDS));
+                } catch (Throwable t) {
+                    t.printStackTrace();
+                }
+                Assert.fail("Timed out trying to force interval sample.");
+            } finally {
+                executorService.shutdownNow();
+                System.out.println("\nSuccessfully forced interval sample to complete on test failure.\n");
+            }
+
+        } catch (InterruptedException ex) {
+            //Suppress
+        } finally {
+            latencyStats.stop();
+            pauseDetector.shutdown();
+        }
     }
 
 }

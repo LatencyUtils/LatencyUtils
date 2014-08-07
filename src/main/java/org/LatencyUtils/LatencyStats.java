@@ -212,11 +212,11 @@ public class LatencyStats {
         //Have to make sure, if recordValue throws any runtime exceptions (especially ArrayIndexOutOfBoundsException) that we complete the increment,
         //or concurrent histogram updating locks forever.
         try {
-			trackRecordingInterval();
-			currentRecordingHistogram.recordValue(latency);
-		} finally {
-			recordingEndEpochUpdater.incrementAndGet(this);
-		}
+            trackRecordingInterval();
+            currentRecordingHistogram.recordValue(latency);
+        } finally {
+            recordingEndEpochUpdater.incrementAndGet(this);
+        }
     }
 
 
