@@ -209,8 +209,6 @@ public class LatencyStats {
      */
     public void recordLatency(long latency) {
         recordingStartEpochUpdater.incrementAndGet(this); // Used for otherwise un-synchronized histogram swapping
-        //Have to make sure, if recordValue throws any runtime exceptions (especially ArrayIndexOutOfBoundsException) that we complete the increment,
-        //or concurrent histogram updating locks forever.
         try {
             trackRecordingInterval();
             currentRecordingHistogram.recordValue(latency);
