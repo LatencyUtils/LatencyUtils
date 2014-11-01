@@ -11,17 +11,21 @@ import java.util.concurrent.LinkedBlockingQueue;
 /**
  * A PauseDetector detects pauses and reports them to registered listeners
  */
-public abstract class PauseDetector extends Thread {
+public abstract class PauseDetector {
 
-    ArrayList<PauseDetectorListener> highPriorityListeners = new ArrayList<PauseDetectorListener>(32);
-    ArrayList<PauseDetectorListener> normalPriorityListeners = new ArrayList<PauseDetectorListener>(32);
+    private final ArrayList<PauseDetectorListener> highPriorityListeners = new ArrayList<PauseDetectorListener>(32);
+    private final ArrayList<PauseDetectorListener> normalPriorityListeners = new ArrayList<PauseDetectorListener>(32);
 
-    private LinkedBlockingQueue<Object> messages = new LinkedBlockingQueue<Object>();
+    private final LinkedBlockingQueue<Object> messages = new LinkedBlockingQueue<Object>();
 
-    volatile boolean stop = false;
+    private final PauseDetectorThread pauseDetectorThread = new PauseDetectorThread();
+
+    private volatile boolean stop;
 
     PauseDetector() {
-        this.start();
+        pauseDetectorThread.setDaemon(true);
+        stop = false;
+        pauseDetectorThread.start();
     }
 
     /**
@@ -70,42 +74,44 @@ public abstract class PauseDetector extends Thread {
      */
     public void shutdown() {
         stop = true;
-        this.interrupt();
+        pauseDetectorThread.interrupt();
     }
 
-    /**
-     * @inheritDoc
-     */
-    public void run() {
-        while (!stop) {
-            try {
-                Object message = messages.take();
 
-                if (message instanceof ChangeListenersRequest) {
-                    final ChangeListenersRequest changeRequest = (ChangeListenersRequest) message;
-                    if (changeRequest.command == ChangeListenersRequest.ChangeCommand.ADD_HIGH_PRIORITY) {
-                        highPriorityListeners.add(changeRequest.listener);
-                    } else if (changeRequest.command == ChangeListenersRequest.ChangeCommand.ADD_NORMAL_PRIORITY) {
-                        normalPriorityListeners.add(changeRequest.listener);
+    private class PauseDetectorThread extends Thread {
+        public void run() {
+            while (!stop) {
+                try {
+                    Object message = messages.take();
+
+                    if (message instanceof ChangeListenersRequest) {
+                        final ChangeListenersRequest changeRequest = (ChangeListenersRequest) message;
+                        if (changeRequest.command == ChangeListenersRequest.ChangeCommand.ADD_HIGH_PRIORITY) {
+                            highPriorityListeners.add(changeRequest.listener);
+                        } else if (changeRequest.command == ChangeListenersRequest.ChangeCommand.ADD_NORMAL_PRIORITY) {
+                            normalPriorityListeners.add(changeRequest.listener);
+                        } else {
+                            normalPriorityListeners.remove(changeRequest.listener);
+                            highPriorityListeners.remove(changeRequest.listener);
+                        }
+
+                    } else if (message instanceof PauseNotification) {
+                        final PauseNotification pauseNotification = (PauseNotification) message;
+
+                        for (PauseDetectorListener listener : highPriorityListeners) {
+                            listener.handlePauseEvent(
+                                    pauseNotification.pauseLengthNsec, pauseNotification.pauseEndTimeNsec);
+                        }
+
+                        for (PauseDetectorListener listener : normalPriorityListeners) {
+                            listener.handlePauseEvent(
+                                    pauseNotification.pauseLengthNsec, pauseNotification.pauseEndTimeNsec);
+                        }
                     } else {
-                        normalPriorityListeners.remove(changeRequest.listener);
-                        highPriorityListeners.remove(changeRequest.listener);
+                        throw new RuntimeException("Unexpected message type received: " + message);
                     }
-
-                } else if (message instanceof PauseNotification) {
-                    final PauseNotification pauseNotification = (PauseNotification) message;
-
-                    for (PauseDetectorListener listener : highPriorityListeners) {
-                        listener.handlePauseEvent(pauseNotification.pauseLengthNsec, pauseNotification.pauseEndTimeNsec);
-                    }
-
-                    for (PauseDetectorListener listener : normalPriorityListeners) {
-                        listener.handlePauseEvent(pauseNotification.pauseLengthNsec, pauseNotification.pauseEndTimeNsec);
-                    }
-                } else {
-                    throw new RuntimeException("Unexpected message type received: " + message);
+                } catch (InterruptedException ex) {
                 }
-            } catch (InterruptedException ex) {
             }
         }
     }

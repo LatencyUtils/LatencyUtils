@@ -9,7 +9,6 @@ import org.HdrHistogram.Histogram;
 import org.HdrHistogram.AtomicHistogram;
 
 import java.lang.ref.WeakReference;
-import java.util.concurrent.atomic.AtomicLongFieldUpdater;
 
 /**
  * LatencyStats objects are used to track and report on the behavior of latencies across measurements.
@@ -88,12 +87,7 @@ public class LatencyStats {
     private Histogram uncorrectedAccumulatedHistogram;
     private Histogram accumulatedHistogram;
 
-    private volatile long recordingStartEpoch = 0;
-    private volatile long recordingEndEpoch = 0;
-    private static final AtomicLongFieldUpdater<LatencyStats> recordingStartEpochUpdater =
-            AtomicLongFieldUpdater.newUpdater(LatencyStats.class, "recordingStartEpoch");
-    private static final AtomicLongFieldUpdater<LatencyStats> recordingEndEpochUpdater =
-            AtomicLongFieldUpdater.newUpdater(LatencyStats.class, "recordingEndEpoch");
+    private final CriticalSectionPhaser recordingPhaser = new CriticalSectionPhaser();
 
     private final PauseTracker pauseTracker;
 
@@ -208,12 +202,13 @@ public class LatencyStats {
      * @param latency latency value (in nanoseconds) to record
      */
     public void recordLatency(long latency) {
-        recordingStartEpochUpdater.incrementAndGet(this); // Used for otherwise un-synchronized histogram swapping
+        long criticalValueAtEnter = recordingPhaser.enteringCriticalSection();
+
         try {
             trackRecordingInterval();
             currentRecordingHistogram.recordValue(latency);
         } finally {
-            recordingEndEpochUpdater.incrementAndGet(this);
+            recordingPhaser.doneWithCriticalSection(criticalValueAtEnter);
         }
     }
 
@@ -428,7 +423,7 @@ public class LatencyStats {
         }
     }
 
-    synchronized void recordDetectedPause(long pauseLength, long pauseEndTime) {
+    private synchronized void recordDetectedPause(long pauseLength, long pauseEndTime) {
         long estimatedInterval =  intervalEstimator.getEstimatedInterval(pauseEndTime);
         long observedLatencyMinbar = pauseLength - estimatedInterval;
         if (observedLatencyMinbar >= estimatedInterval) {
@@ -436,29 +431,29 @@ public class LatencyStats {
         }
     }
 
-    void trackRecordingInterval() {
+    private void trackRecordingInterval() {
         long now = TimeServices.nanoTime();
         intervalEstimator.recordInterval(now);
     }
 
-    void swapRecordingHistograms() {
+    private void swapRecordingHistograms() {
         final AtomicHistogram tempHistogram = intervalRawDataHistogram;
         intervalRawDataHistogram = currentRecordingHistogram;
         currentRecordingHistogram = tempHistogram;
     }
 
-    void swapPauseCorrectionHistograms() {
+    private void swapPauseCorrectionHistograms() {
         final Histogram tempHistogram = intervalPauseCorrectionsHistogram;
         intervalPauseCorrectionsHistogram = currentPauseCorrectionsHistogram;
         currentPauseCorrectionsHistogram = tempHistogram;
     }
 
-    synchronized void swapHistograms() {
+    private synchronized void swapHistograms() {
         swapRecordingHistograms();
         swapPauseCorrectionHistograms();
     }
 
-    synchronized void updateHistograms() {
+    private synchronized void updateHistograms() {
         intervalRawDataHistogram.reset();
         intervalPauseCorrectionsHistogram.reset();
 
@@ -470,8 +465,9 @@ public class LatencyStats {
         intervalPauseCorrectionsHistogram.setEndTimeStamp(now);
 
         // Make sure we are not in the middle of recording a value on the previously current recording histogram:
-        long startEpoch = recordingStartEpochUpdater.get(this);
-        while (recordingEndEpochUpdater.get(this) < startEpoch);
+
+        // Flip phase on epochs to make sure no in-flight recordings are active on pre-flip phase:
+        recordingPhaser.flipPhase();
 
         uncorrectedAccumulatedHistogram.add(intervalRawDataHistogram);
         uncorrectedAccumulatedHistogram.setEndTimeStamp(now);
@@ -484,7 +480,7 @@ public class LatencyStats {
     /**
      * PauseTracker is used to feed pause correction histograms whenever a pause is reported:
      */
-    static class PauseTracker extends WeakReference<LatencyStats> implements PauseDetectorListener {
+    private static class PauseTracker extends WeakReference<LatencyStats> implements PauseDetectorListener {
         final PauseDetector pauseDetector;
 
         PauseTracker(final PauseDetector pauseDetector, final LatencyStats latencyStats) {

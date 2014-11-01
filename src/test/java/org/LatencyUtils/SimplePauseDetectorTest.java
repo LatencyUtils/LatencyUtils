@@ -42,6 +42,7 @@ public class SimplePauseDetectorTest {
         System.out.println("Starting 1 msec, 3 thread sleeping pause detector:");
 
         PauseTracker tracker = new PauseTracker(pauseDetector, this, detectedPauseLength);
+
         try {
             Thread.sleep(100);
 
@@ -110,8 +111,8 @@ public class SimplePauseDetectorTest {
         System.out.println("Starting 250 usec, 3 thread sleeping pause detector:");
 
         PauseTracker tracker = new PauseTracker(pauseDetector, this, detectedPauseLength);
-        try {
 
+        try {
             Thread.sleep(100);
 
             detectedPauseLength.set(0);
@@ -161,6 +162,7 @@ public class SimplePauseDetectorTest {
         System.out.println("Starting 50 usec, 3 thread spinning pause detector:");
 
         PauseTracker tracker = new PauseTracker(pauseDetector, this, detectedPauseLength);
+
         try {
             Thread.sleep(1000);
 

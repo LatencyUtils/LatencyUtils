@@ -41,18 +41,20 @@ public class LatencyStatsTest {
 
         LatencyStats latencyStats = new LatencyStats();
 
-        pauseDetector.skipConsensusTimeTo(TimeServices.nanoTime() + 115 * MSEC);
-
-        TimeServices.moveTimeForward(5000L);
-        TimeUnit.NANOSECONDS.sleep(1 * MSEC); // Make sure things have some time to propagate
-        TimeServices.moveTimeForward(1000000L);
-        TimeUnit.NANOSECONDS.sleep(1 * MSEC); // Make sure things have some time to propagate
-        TimeServices.moveTimeForward(2000000L);
-        TimeUnit.NANOSECONDS.sleep(1 * MSEC); // Make sure things have some time to propagate
-        TimeServices.moveTimeForward(110000000L);
-        TimeUnit.NANOSECONDS.sleep(1 * MSEC); // Make sure things have some time to propagate
-
         try {
+            Thread.sleep(100);
+
+            pauseDetector.skipConsensusTimeTo(TimeServices.nanoTime() + 115 * MSEC);
+
+            TimeServices.moveTimeForward(5000L);
+            TimeUnit.NANOSECONDS.sleep(1 * MSEC); // Make sure things have some time to propagate
+            TimeServices.moveTimeForward(1000000L);
+            TimeUnit.NANOSECONDS.sleep(1 * MSEC); // Make sure things have some time to propagate
+            TimeServices.moveTimeForward(2000000L);
+            TimeUnit.NANOSECONDS.sleep(1 * MSEC); // Make sure things have some time to propagate
+            TimeServices.moveTimeForward(110000000L);
+            TimeUnit.NANOSECONDS.sleep(1 * MSEC); // Make sure things have some time to propagate
+
 
             TimeUnit.NANOSECONDS.sleep(10 * MSEC); // Make sure things have some time to propagate
 
@@ -257,18 +259,19 @@ public class LatencyStatsTest {
 
         final LatencyStats latencyStats = new LatencyStats();
 
-        pauseDetector.skipConsensusTimeTo(TimeServices.nanoTime() + 115 * MSEC);
-
-        TimeServices.moveTimeForward(5000L);
-        TimeUnit.NANOSECONDS.sleep(1 * MSEC); // Make sure things have some time to propagate
-        TimeServices.moveTimeForward(1000000L);
-        TimeUnit.NANOSECONDS.sleep(1 * MSEC); // Make sure things have some time to propagate
-        TimeServices.moveTimeForward(2000000L);
-        TimeUnit.NANOSECONDS.sleep(1 * MSEC); // Make sure things have some time to propagate
-        TimeServices.moveTimeForward(110000000L);
-        TimeUnit.NANOSECONDS.sleep(1 * MSEC); // Make sure things have some time to propagate
-
         try {
+            Thread.sleep(100);
+
+            pauseDetector.skipConsensusTimeTo(TimeServices.nanoTime() + 115 * MSEC);
+
+            TimeServices.moveTimeForward(5000L);
+            TimeUnit.NANOSECONDS.sleep(1 * MSEC); // Make sure things have some time to propagate
+            TimeServices.moveTimeForward(1000000L);
+            TimeUnit.NANOSECONDS.sleep(1 * MSEC); // Make sure things have some time to propagate
+            TimeServices.moveTimeForward(2000000L);
+            TimeUnit.NANOSECONDS.sleep(1 * MSEC); // Make sure things have some time to propagate
+            TimeServices.moveTimeForward(110000000L);
+            TimeUnit.NANOSECONDS.sleep(1 * MSEC); // Make sure things have some time to propagate
 
             TimeUnit.NANOSECONDS.sleep(10 * MSEC); // Make sure things have some time to propagate
 

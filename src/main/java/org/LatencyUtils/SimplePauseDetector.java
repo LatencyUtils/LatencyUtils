@@ -17,21 +17,21 @@ import java.util.concurrent.atomic.AtomicLong;
 public class SimplePauseDetector extends PauseDetector {
     // All times and time units are in nanoseconds
 
-    final static long DEFAULT_SleepInterval = 1000000L; // 1 msec
-    final static long DEFAULT_PauseNotificationThreshold = 1000000L; // 1 msec
-    final static int DEFAULT_NumberOfDetectorThreads = 3;
-    final static boolean DEFAULT_Verbose = false;
+    private final static long DEFAULT_SleepInterval = 1000000L; // 1 msec
+    private final static long DEFAULT_PauseNotificationThreshold = 1000000L; // 1 msec
+    private final static int DEFAULT_NumberOfDetectorThreads = 3;
+    private final static boolean DEFAULT_Verbose = false;
 
-    final long sleepInterval;
-    final long pauseNotificationThreshold;
-    final int numberOfDetectorThreads;
-    boolean verbose;
+    private final long sleepInterval;
+    private final long pauseNotificationThreshold;
     final AtomicLong consensusLatestTime = new AtomicLong();
 
-    volatile long stallTheadMask = 0;
-    volatile long stopThreadMask = 0;
+    private volatile long stallTheadMask = 0;
+    private volatile long stopThreadMask = 0;
 
-    SimplePauseDetectorThread detectors[];
+    private final SimplePauseDetectorThread detectors[];
+
+    private boolean verbose;
 
     /**
      * Creates a SimplePauseDetector
@@ -55,7 +55,6 @@ public class SimplePauseDetector extends PauseDetector {
                                int numberOfDetectorThreads, boolean verbose) {
         this.sleepInterval = sleepInterval;
         this.pauseNotificationThreshold = pauseNotificationThreshold;
-        this.numberOfDetectorThreads = numberOfDetectorThreads;
         this.verbose = verbose;
         detectors = new SimplePauseDetectorThread[numberOfDetectorThreads];
         for (int i = 0 ; i < numberOfDetectorThreads; i++) {
@@ -89,7 +88,7 @@ public class SimplePauseDetector extends PauseDetector {
         super.shutdown();
     }
 
-    class SimplePauseDetectorThread extends Thread {
+    private class SimplePauseDetectorThread extends Thread {
         volatile long observedLasUpdateTime;
         final int threadNumber;
         final long threadMask;

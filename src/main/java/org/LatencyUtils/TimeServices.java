@@ -18,13 +18,13 @@ import java.util.concurrent.*;
  *
  */
 public class TimeServices {
-    static final boolean useActualTime;
+    public static final boolean useActualTime;
 
-    static long currentTime;
+    private static long currentTime;
 
     // Use a monitor to notify any waiters that time has changed.
     // TODO: if we find this to be inefficient for some reason, replace with a timer wheel or some such.
-    final static Object timeUpdateMonitor = new Object();
+    private final static Object timeUpdateMonitor = new Object();
 
     static {
         String useActualTimeProperty = System.getProperty("LatencyUtils.useActualTime", "true");

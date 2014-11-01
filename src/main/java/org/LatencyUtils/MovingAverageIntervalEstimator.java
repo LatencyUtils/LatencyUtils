@@ -13,11 +13,11 @@ import java.util.concurrent.atomic.AtomicLong;
  * window, and will return an impossibly long interval estimate until then.
  */
 public class MovingAverageIntervalEstimator extends IntervalEstimator {
-    final long intervalEndTimes[];
-    final int windowMagnitude;
-    final int windowLength;
-    final int windowMask;
-    AtomicLong count = new AtomicLong(0);
+    protected final long intervalEndTimes[];
+    protected final int windowMagnitude;
+    protected final int windowLength;
+    protected final int windowMask;
+    protected AtomicLong count = new AtomicLong(0);
 
     /**
      *
@@ -96,7 +96,7 @@ public class MovingAverageIntervalEstimator extends IntervalEstimator {
         return Math.max(averageInterval, 1); // do not return a 0 interval estimate
     }
 
-    int getCurrentPosition() {
+    protected int getCurrentPosition() {
         return (int) (count.get() & windowMask);
     }
 }

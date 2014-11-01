@@ -6,7 +6,6 @@
 package org.LatencyUtils;
 
 import java.lang.ref.WeakReference;
-import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicLongArray;
 
 /**
@@ -33,18 +32,17 @@ import java.util.concurrent.atomic.AtomicLongArray;
  */
 
 public class TimeCappedMovingAverageIntervalEstimator extends MovingAverageIntervalEstimator {
-//    final long reportingTimes[];
-    final long baseTimeCap;
-    final PauseTracker pauseTracker;
-    long timeCap;
-    volatile long timeOfLastEstimatedInterval = 0;
 
-    static final int maxPausesToTrack = 32;
-    volatile long latestPauseStartTime = 0;
-    AtomicLongArray pauseStartTimes = new AtomicLongArray(maxPausesToTrack);
-    AtomicLongArray pauseLengths = new AtomicLongArray(maxPausesToTrack);
-    int earliestPauseIndex = 0;
-    int nextPauseRecordingIndex = 0;
+    private final long baseTimeCap;
+    private final PauseTracker pauseTracker;
+    private long timeCap;
+    private volatile long timeOfLastEstimatedInterval = 0;
+
+    private static final int maxPausesToTrack = 32;
+    private AtomicLongArray pauseStartTimes = new AtomicLongArray(maxPausesToTrack);
+    private AtomicLongArray pauseLengths = new AtomicLongArray(maxPausesToTrack);
+    private int earliestPauseIndex = 0;
+    private int nextPauseRecordingIndex = 0;
 
     /**
      *
@@ -145,8 +143,7 @@ public class TimeCappedMovingAverageIntervalEstimator extends MovingAverageInter
         return averageInterval;
     }
 
-    synchronized void recordPause(final long pauseLength, final long pauseEndTime) {
-        latestPauseStartTime = pauseEndTime - pauseLength;
+    private synchronized void recordPause(final long pauseLength, final long pauseEndTime) {
 
         if (pauseStartTimes.get(nextPauseRecordingIndex) != Long.MAX_VALUE) {
             // We are overwriting a live pause record, account for it:
@@ -240,7 +237,7 @@ public class TimeCappedMovingAverageIntervalEstimator extends MovingAverageInter
         }
 
         int earliestQualifyingWindowPosition =
-                (int) ((getCurrentPosition() + numberOfWindowPositionsOutsideOfTimeCap) & windowMask);
+                (getCurrentPosition() + numberOfWindowPositionsOutsideOfTimeCap) & windowMask;
 
         return intervalEndTimes[earliestQualifyingWindowPosition];
     }
@@ -279,7 +276,7 @@ public class TimeCappedMovingAverageIntervalEstimator extends MovingAverageInter
     /**
      * PauseTracker is used to feed pause correction histograms whenever a pause is reported:
      */
-    static class PauseTracker extends WeakReference<TimeCappedMovingAverageIntervalEstimator> implements PauseDetectorListener {
+    private static class PauseTracker extends WeakReference<TimeCappedMovingAverageIntervalEstimator> implements PauseDetectorListener {
         final PauseDetector pauseDetector;
 
         PauseTracker(final PauseDetector pauseDetector, final TimeCappedMovingAverageIntervalEstimator estimator) {
