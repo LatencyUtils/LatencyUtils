@@ -35,9 +35,6 @@ public class MovingAverageIntervalEstimator extends IntervalEstimator {
         }
     }
 
-    /**
-     * @inheritDoc
-     */
     @Override
     public void recordInterval(long when) {
         recordIntervalAndReturnWindowPosition(when);
@@ -54,9 +51,6 @@ public class MovingAverageIntervalEstimator extends IntervalEstimator {
         return positionToSwap;
     }
 
-    /**
-     * @inheritDoc
-     */
     @Override
     public long getEstimatedInterval(long when) {
         long sampledCount = count.get();

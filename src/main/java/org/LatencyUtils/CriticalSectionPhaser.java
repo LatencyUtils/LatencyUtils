@@ -26,23 +26,29 @@ public class CriticalSectionPhaser {
             AtomicLongFieldUpdater.newUpdater(CriticalSectionPhaser.class, "oddEndEpoch");
 
     /**
-     * Indicate entry to a critical section. This call is wait-free.
-     *
+     * Indicate entry to a critical section.
+     * <p>
+     * This call is wait-free on architectures that support wait free atomic add operations,
+     * and is non-blocking on architectures that only support atomic CAS or SWAP operations.
+     * <p>
      * {@link CriticalSectionPhaser#enteringCriticalSection()} must be matched with a subsequent
-     * {@link CriticalSectionPhaser#doneWithCriticalSection} in order for CriticalSectionPhaser
+     * {@link CriticalSectionPhaser#exitingCriticalSection} in order for CriticalSectionPhaser
      * synchronization to function properly.
      *
      * @return an (opaque) value associated with the critical section entry, which MUST be provided to the matching
-     * {@link CriticalSectionPhaser#doneWithCriticalSection} call.
+     * {@link CriticalSectionPhaser#exitingCriticalSection} call.
      */
     public long enteringCriticalSection() {
         return startEpochUpdater.getAndAdd(this, 2);
     }
 
     /**
-     * Indicate exit from a critical section. This call is wait-free.
-     *
-     * {@link CriticalSectionPhaser#doneWithCriticalSection} must be matched with a preceding
+     * Indicate exit from a critical section.
+     * <p>
+     * This call is wait-free on architectures that support wait free atomic add operations,
+     * and is non-blocking on architectures that only support atomic CAS or SWAP operations.
+     * <p>
+     * {@link CriticalSectionPhaser#exitingCriticalSection} must be matched with a preceding
      * {@link CriticalSectionPhaser#enteringCriticalSection()} call, and must be provided with the
      * matching {@link CriticalSectionPhaser#enteringCriticalSection()} call's return value, in
      * order for CriticalSectionPhaser synchronization to function properly.
@@ -50,7 +56,7 @@ public class CriticalSectionPhaser {
      * @param criticalValueAtEnter the (opaque) value returned from the matching
      * {@link CriticalSectionPhaser#enteringCriticalSection()} call.
      */
-    public void doneWithCriticalSection(long criticalValueAtEnter) {
+    public void exitingCriticalSection(long criticalValueAtEnter) {
         if ((criticalValueAtEnter & 1) == 0) {
             evenEndEpochUpdater.getAndAdd(this, 2);
         } else {
@@ -62,11 +68,21 @@ public class CriticalSectionPhaser {
      * Flip a phase in the CriticalSectionPhaser instance. {@link CriticalSectionPhaser#flipPhase()} will
      * return only after all critical sections that may have been in flight when the
      * {@link CriticalSectionPhaser#flipPhase()} call were made had completed.
+     * <p>
      * No actual critical section activity is required for {@link CriticalSectionPhaser#flipPhase()} to
-     * succeed, and it does not block. But {@link CriticalSectionPhaser#flipPhase()} may wait for active
+     * succeed.
+     * <p>
+     * {@link CriticalSectionPhaser#flipPhase()} is synchronized, to prevent attempts at concurrent
+     * flipping across multiple callers. It is therefore blocking with respect to other calls to
+     * {@link CriticalSectionPhaser#flipPhase()}.
+     * <p>
+     * However, {@link CriticalSectionPhaser#flipPhase()} is non-blocking with respect to calls to
+     * {@link CriticalSectionPhaser#enteringCriticalSection()} and
+     * {@link CriticalSectionPhaser#exitingCriticalSection}. It may spin-wait for for active
      * critical section code to complete. Therefore, {@link CriticalSectionPhaser#flipPhase()} will remain
-     * non-blocking as long as critical sections protected by {@link CriticalSectionPhaser#enteringCriticalSection()}
-     * and {@link CriticalSectionPhaser#doneWithCriticalSection}remain wait-free.        *
+     * non-blocking as long as all related critical sections protected by
+     * {@link CriticalSectionPhaser#enteringCriticalSection()} and
+     * {@link CriticalSectionPhaser#exitingCriticalSection} remain wait-free.
      */
     public synchronized void flipPhase() {
         boolean nextPhaseIsOdd = ((startEpoch & 1) == 0);

@@ -12,8 +12,8 @@
  * {@link org.LatencyUtils.LatencyStats} instances are used to track recorded latencies in the common
  * use case the often follow this pattern:
  *
- * <code>
  * <pre>
+ * <code>
  * LatencyStats myOpStats = new LatencyStats();
  * ...
  *
@@ -33,10 +33,9 @@
  *
  * intervalHistogram.getHistogramData().outputPercentileDistribution(System.out, 1000000.0);
  *
- * </pre>
  * </code>
+ * </pre>
  *
- * <p>
  * <h3>The problem</h3>
  * Latency tracking of in-process operations usually consists simple time sampling around a tracked operation.
  * E.g. a database read operation for which latency statistics are being developed may be surrounded by time
@@ -47,10 +46,12 @@
  * The problem with this extremely common form of latency behavior tracking is that whenever pauses occur in
  * the system, latency statistics become significantly skewed toward falsely-optimistic values. This occurs in
  * two key ways:
+ * <ul>
  * <li>When a pause occurs during a tracked operation, a single long recorded latency will appear in the recorded
  * values, with no long latencies associated with any pending requests that may be stalled by the pause.</li>
  * <li>When a pause occurs outside of the tracked operation (and outside of the tracked time window) no long
  * latency value would be recorded, even though any requested operation would be stalled by the pause.</li>
+ * </ul>
  * <p>
  * <h3>The Solution</h3>
  * The {@link org.LatencyUtils.LatencyStats} class is designed for simple, drop-in use as a latency behavior recording object

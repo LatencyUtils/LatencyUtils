@@ -78,17 +78,11 @@ public class TimeCappedMovingAverageIntervalEstimator extends MovingAverageInter
         }
     }
 
-    /**
-     * @inheritDoc
-     */
     @Override
     public void recordInterval(long when) {
         super.recordIntervalAndReturnWindowPosition(when);
     }
 
-    /**
-     * @inheritDoc
-     */
     @Override
     public synchronized long getEstimatedInterval(final long when) {
         timeOfLastEstimatedInterval = when;

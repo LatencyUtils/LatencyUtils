@@ -164,6 +164,7 @@ public class SimplePauseDetector extends PauseDetector {
      * when it does not.
      * @param threadNumberMask a mask designating which threads should be stalled.
      * @param stallLength stall length, in nanosecond units
+     * @throws InterruptedException if internal sleep implementation throws it
      */
     public void stallDetectorThreads(long threadNumberMask, long stallLength) throws InterruptedException {
         long savedMask = stallTheadMask;
@@ -186,7 +187,7 @@ public class SimplePauseDetector extends PauseDetector {
      * A test method that allows the caller to artificially move the consensus observed time forward
      * without causing a pause to be detected as a result of the time skip. Useful for test programs
      * that wish to use artificial time services.
-     * @param newConsensusTime
+     * @param newConsensusTime time to skip to
      */
     public void skipConsensusTimeTo(long newConsensusTime) {
         consensusLatestTime.set(newConsensusTime);

@@ -116,7 +116,7 @@ public class LatencyStats {
     }
 
     /**
-     * Create a LatencyStats object with default settings.<br></br>
+     * Create a LatencyStats object with default settings.<br>
      * <ul>
      * <li>use the default pause detector (supplied separately set using {@link #setDefaultPauseDetector}, which
      * will itself default to a {@link SimplePauseDetector} if not explicitly supplied)</li>
@@ -208,7 +208,7 @@ public class LatencyStats {
             trackRecordingInterval();
             currentRecordingHistogram.recordValue(latency);
         } finally {
-            recordingPhaser.doneWithCriticalSection(criticalValueAtEnter);
+            recordingPhaser.exitingCriticalSection(criticalValueAtEnter);
         }
     }
 
@@ -354,13 +354,15 @@ public class LatencyStats {
 
     /**
      * A fluent API builder class for creating LatencyStats objects.
-     * <br>Uses the following defaults:</br>
-     * <li>lowestTrackableLatency:                  1000 (1 usec)</li>
-     * <li>highestTrackableLatency:                 3600000000000L (1 hour)</li>
-     * <li>numberOfSignificantValueDigits:          2</li>
-     * <li>intervalEstimatorWindowLength:           1024</li>
-     * <li>intervalEstimatorTimeCap:                10000000000L (10 sec)</li>
-     * <li>pauseDetector:                           (use LatencyStats default)</li>
+     * <br>Uses the following defaults:
+     * <ul>
+     * <li>lowestTrackableLatency:                  1000 (1 usec) </li>
+     * <li>highestTrackableLatency:                 3600000000000L (1 hour) </li>
+     * <li>numberOfSignificantValueDigits:          2 </li>
+     * <li>intervalEstimatorWindowLength:           1024 </li>
+     * <li>intervalEstimatorTimeCap:                10000000000L (10 sec) </li>
+     * <li>pauseDetector:                           (use LatencyStats default) </li>
+     * </ul>
      */
     public static class Builder {
         private long lowestTrackableLatency = 1000L; /* 1 usec */
