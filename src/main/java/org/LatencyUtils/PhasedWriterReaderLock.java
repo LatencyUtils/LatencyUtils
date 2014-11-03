@@ -9,7 +9,7 @@ import java.util.concurrent.atomic.AtomicLongFieldUpdater;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
- * {@link PhasedWriterReaderLock} provides an asymmetric means for synchronizing wait-free "writer" critical
+ * {@link PhasedWriterReaderLock} instances provide an asymmetric means for synchronizing wait-free "writer" critical
  * section execution against a "reader phase flip" that needs to make sure no writer critical
  * sections that were active at the beginning of the flip are still active after the flip is done.
  * <p>
@@ -18,14 +18,16 @@ import java.util.concurrent.locks.ReentrantLock;
  * <p>
  * When used to protect an actively recording data structure, the assumptions on how readers and writers act are:
  * <ol>
- * <li>There are two data structures ("active" and "inactive")</li>
+ * <li>There are two sets of data structures ("active" and "inactive")</li>
  * <li>Writing is done to the perceived active version (as perceived by the writer), and only
  *     when holding a writerLock.</li>
  * <li>Only readers switch the perceived roles of the active and inactive data structures.
  *     They do so only while under readerLock(), and only before calling flipPhase().</li>
- * <li>When assumptions 1-3 are met, PhasedWriteReadLock guarantees that the inactive version is
- *     not being modified while being read while under readerLock() protection after a flipPhase() operation.</li>
  * </ol>
+ * When the above assumptions are met, PhasedWriteReadLock guarantees that the inactive data structures are not
+ * being modified by any writers while being read while under readerLock() protection after a flipPhase()
+ * operation.</li>
+ *
  */
 public class PhasedWriterReaderLock {
     private volatile long startEpoch = 0;
@@ -48,7 +50,7 @@ public class PhasedWriterReaderLock {
      * and is lock-free on architectures that only support atomic CAS or SWAP operations.
      * <p>
      * {@link PhasedWriterReaderLock#writerLock()} must be matched with a subsequent
-     * {@link PhasedWriterReaderLock#writerLock} in order for CriticalSectionPhaser
+     * {@link PhasedWriterReaderLock#writerUnlock(long)} in order for CriticalSectionPhaser
      * synchronization to function properly.
      *
      * @return an (opaque) value associated with the critical section entry, which MUST be provided to the matching
@@ -64,7 +66,7 @@ public class PhasedWriterReaderLock {
      * This call is wait-free on architectures that support wait free atomic add operations,
      * and is lock-free on architectures that only support atomic CAS or SWAP operations.
      * <p>
-     * {@link PhasedWriterReaderLock#writerLock} must be matched with a preceding
+     * {@link PhasedWriterReaderLock#writerUnlock(long)} must be matched with a preceding
      * {@link PhasedWriterReaderLock#writerLock()} call, and must be provided with the
      * matching {@link PhasedWriterReaderLock#writerLock()} call's return value, in
      * order for CriticalSectionPhaser synchronization to function properly.
@@ -81,21 +83,28 @@ public class PhasedWriterReaderLock {
     }
 
     /**
-     * Indicate entry to a critical section containing a read operation.
+     * Enter to a critical section containing a read operation (mutually excludes against other
+     * {@link org.LatencyUtils.PhasedWriterReaderLock#readerLock} calls).
+     * <p>
+     * {@link PhasedWriterReaderLock#readerLock} DOES NOT provide synchronization
+     * against {@link PhasedWriterReaderLock#writerLock()} calls. Use {@link PhasedWriterReaderLock#flipPhase()}
+     * to synchronize reads against writers.
      */
     public void readerLock() {
         readerLock.lock();
     }
 
     /**
-     * Indicate exit from a critical section containing a read operation.
+     * Exit from a critical section containing a read operation (relinquishes mutual exclusion against other
+     * {@link org.LatencyUtils.PhasedWriterReaderLock#readerLock} calls).
      */
     public void readerUnlock() {
         readerLock.unlock();
     }
 
     /**
-     * Flip a phase in the {@link PhasedWriterReaderLock} instance.
+     * Flip a phase in the {@link PhasedWriterReaderLock} instance, {@link PhasedWriterReaderLock#flipPhase()}
+     * can only be called while holding the readerLock().
      * {@link PhasedWriterReaderLock#flipPhase()} will return only after all writer critical sections (protected by
      * {@link org.LatencyUtils.PhasedWriterReaderLock#writerLock()} ()} and
      * {@link PhasedWriterReaderLock#writerUnlock(long)} ()}) that may have been in flight when the
@@ -103,8 +112,6 @@ public class PhasedWriterReaderLock {
      * <p>
      * No actual writer critical section activity is required for {@link PhasedWriterReaderLock#flipPhase()} to
      * succeed.
-     * <p>
-     * {@link PhasedWriterReaderLock#flipPhase()} can only be called while holding the readerLock().
      * <p>
      * However, {@link PhasedWriterReaderLock#flipPhase()} is lock-free with respect to calls to
      * {@link PhasedWriterReaderLock#writerLock()} and
