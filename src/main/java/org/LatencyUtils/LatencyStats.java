@@ -87,7 +87,7 @@ public class LatencyStats {
     private Histogram uncorrectedAccumulatedHistogram;
     private Histogram accumulatedHistogram;
 
-    private final PhasedWriterReaderLock recordingPhaser = new PhasedWriterReaderLock();
+    private final WriterReaderPhaser recordingPhaser = new WriterReaderPhaser();
 
     private final PauseTracker pauseTracker;
 
@@ -202,13 +202,13 @@ public class LatencyStats {
      * @param latency latency value (in nanoseconds) to record
      */
     public void recordLatency(long latency) {
-        long criticalValueAtEnter = recordingPhaser.writerLock();
+        long criticalValueAtEnter = recordingPhaser.writerCriticalSectionEnter();
 
         try {
             trackRecordingInterval();
             currentRecordingHistogram.recordValue(latency);
         } finally {
-            recordingPhaser.writerUnlock(criticalValueAtEnter);
+            recordingPhaser.writerCriticalSectionExit(criticalValueAtEnter);
         }
     }
 
@@ -235,9 +235,12 @@ public class LatencyStats {
      * @param targetHistogram the histogram into which the accumulated histogram's data should be copied
      */
     public synchronized void getAccumulatedHistogramInto(Histogram targetHistogram) {
-        recordingPhaser.readerLock();
-        accumulatedHistogram.copyInto(targetHistogram);
-        recordingPhaser.readerUnlock();
+        try {
+            recordingPhaser.readerLock();
+            accumulatedHistogram.copyInto(targetHistogram);
+        } finally {
+            recordingPhaser.readerUnlock();
+        }
     }
 
     /**
@@ -246,9 +249,12 @@ public class LatencyStats {
      * @param toHistogram the histogram into which the accumulated histogram's data should be added
      */
     public synchronized void addAccumulatedHistogramTo(Histogram toHistogram) {
-        recordingPhaser.readerLock();
-        toHistogram.add(accumulatedHistogram);
-        recordingPhaser.readerUnlock();
+        try {
+            recordingPhaser.readerLock();
+            toHistogram.add(accumulatedHistogram);
+        } finally {
+            recordingPhaser.readerUnlock();
+        }
     }
 
     /**
@@ -291,10 +297,13 @@ public class LatencyStats {
      * @param targetHistogram the histogram into which the interval histogram's data should be copied
      */
     public synchronized void getIntervalHistogramInto(Histogram targetHistogram) {
-        recordingPhaser.readerLock();
-        intervalRawDataHistogram.copyInto(targetHistogram);
-        targetHistogram.add(intervalPauseCorrectionsHistogram);
-        recordingPhaser.readerUnlock();
+        try {
+            recordingPhaser.readerLock();
+            intervalRawDataHistogram.copyInto(targetHistogram);
+            targetHistogram.add(intervalPauseCorrectionsHistogram);
+        } finally {
+            recordingPhaser.readerUnlock();
+        }
     }
 
     /**
@@ -303,10 +312,13 @@ public class LatencyStats {
      * @param toHistogram the histogram into which the interval histogram's data should be added
      */
     public synchronized void addIntervalHistogramTo(Histogram toHistogram) {
-        recordingPhaser.readerLock();
-        toHistogram.add(intervalRawDataHistogram);
-        toHistogram.add(intervalPauseCorrectionsHistogram);
-        recordingPhaser.readerUnlock();
+        try {
+            recordingPhaser.readerLock();
+            toHistogram.add(intervalRawDataHistogram);
+            toHistogram.add(intervalPauseCorrectionsHistogram);
+        } finally {
+            recordingPhaser.readerUnlock();
+        }
     }
 
     /**
@@ -332,9 +344,12 @@ public class LatencyStats {
      * @param targetHistogram the histogram into which the interval histogram's data should be copied
      */
     public synchronized void getUncorrectedIntervalHistogramInto(Histogram targetHistogram) {
-        recordingPhaser.readerLock();
-        intervalRawDataHistogram.copyInto(targetHistogram);
-        recordingPhaser.readerUnlock();
+        try {
+            recordingPhaser.readerLock();
+            intervalRawDataHistogram.copyInto(targetHistogram);
+        } finally {
+            recordingPhaser.readerUnlock();
+        }
     }
 
 
@@ -351,13 +366,16 @@ public class LatencyStats {
      * Reset the contents of the accumulated histogram
      */
     public synchronized void resetAccumulatedHistogram() {
-        recordingPhaser.readerLock();
-        long now = System.currentTimeMillis();
-        accumulatedHistogram.reset();
-        accumulatedHistogram.setStartTimeStamp(now);
-        uncorrectedAccumulatedHistogram.reset();
-        uncorrectedAccumulatedHistogram.setStartTimeStamp(now);
-        recordingPhaser.readerUnlock();
+        try {
+            recordingPhaser.readerLock();
+            long now = System.currentTimeMillis();
+            accumulatedHistogram.reset();
+            accumulatedHistogram.setStartTimeStamp(now);
+            uncorrectedAccumulatedHistogram.reset();
+            uncorrectedAccumulatedHistogram.setStartTimeStamp(now);
+        } finally {
+            recordingPhaser.readerUnlock();
+        }
     }
 
     /**
@@ -458,7 +476,7 @@ public class LatencyStats {
     }
 
     private synchronized void recordDetectedPause(long pauseLength, long pauseEndTime) {
-        long criticalValueAtEnter = recordingPhaser.writerLock();
+        long criticalValueAtEnter = recordingPhaser.writerCriticalSectionEnter();
         try {
             long estimatedInterval = intervalEstimator.getEstimatedInterval(pauseEndTime);
             long observedLatencyMinbar = pauseLength - estimatedInterval;
@@ -469,7 +487,7 @@ public class LatencyStats {
                 );
             }
         } finally {
-            recordingPhaser.writerUnlock(criticalValueAtEnter);
+            recordingPhaser.writerCriticalSectionExit(criticalValueAtEnter);
         }
     }
 
@@ -496,29 +514,32 @@ public class LatencyStats {
     }
 
     private synchronized void updateHistograms() {
-        recordingPhaser.readerLock();
-        intervalRawDataHistogram.reset();
-        intervalPauseCorrectionsHistogram.reset();
+        try {
+            recordingPhaser.readerLock();
+            intervalRawDataHistogram.reset();
+            intervalPauseCorrectionsHistogram.reset();
 
-        swapHistograms();
-        long now = System.currentTimeMillis();
-        currentRecordingHistogram.setStartTimeStamp(now);
-        currentPauseCorrectionsHistogram.setStartTimeStamp(now);
-        intervalRawDataHistogram.setEndTimeStamp(now);
-        intervalPauseCorrectionsHistogram.setEndTimeStamp(now);
+            swapHistograms();
+            long now = System.currentTimeMillis();
+            currentRecordingHistogram.setStartTimeStamp(now);
+            currentPauseCorrectionsHistogram.setStartTimeStamp(now);
+            intervalRawDataHistogram.setEndTimeStamp(now);
+            intervalPauseCorrectionsHistogram.setEndTimeStamp(now);
 
-        // Make sure we are not in the middle of recording a value on the previously current recording histogram:
+            // Make sure we are not in the middle of recording a value on the previously current recording histogram:
 
-        // Flip phase on epochs to make sure no in-flight recordings are active on pre-flip phase:
-        recordingPhaser.flipPhase();
+            // Flip phase on epochs to make sure no in-flight recordings are active on pre-flip phase:
+            recordingPhaser.flipPhase();
 
-        uncorrectedAccumulatedHistogram.add(intervalRawDataHistogram);
-        uncorrectedAccumulatedHistogram.setEndTimeStamp(now);
+            uncorrectedAccumulatedHistogram.add(intervalRawDataHistogram);
+            uncorrectedAccumulatedHistogram.setEndTimeStamp(now);
 
-        accumulatedHistogram.add(intervalRawDataHistogram);
-        accumulatedHistogram.add(intervalPauseCorrectionsHistogram);
-        accumulatedHistogram.setEndTimeStamp(now);
-        recordingPhaser.readerUnlock();
+            accumulatedHistogram.add(intervalRawDataHistogram);
+            accumulatedHistogram.add(intervalPauseCorrectionsHistogram);
+            accumulatedHistogram.setEndTimeStamp(now);
+        } finally {
+            recordingPhaser.readerUnlock();
+        }
     }
 
     /**
