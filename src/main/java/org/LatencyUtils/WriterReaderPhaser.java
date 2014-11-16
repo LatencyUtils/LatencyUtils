@@ -5,6 +5,7 @@
 
 package org.LatencyUtils;
 
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLongFieldUpdater;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -17,13 +18,11 @@ import java.util.concurrent.locks.ReentrantLock;
  * While a {@link WriterReaderPhaser} can be useful in multiple scenarios, a specific and common use case is
  * that of safely managing "double buffered" data stream access in which writers can proceed without being
  * blocked, while readers gain access to stable and unchanging buffer samples
- * <p>
  * <blockquote>
  * NOTE: {@link WriterReaderPhaser} writers are wait-free on architectures that support wait-free atomic
  * increment operations. They remain lock-free (but not wait-free) on architectures that do not support
  * wait-free atomic increment operations.
  * </blockquote>
- * <p>
  * {@link WriterReaderPhaser} "writers" are wait free, "readers" block for other "readers", and
  * "readers" are only blocked by "writers" whose critical was entered before the reader's
  * {@link WriterReaderPhaser#flipPhase()} attempt.
@@ -39,7 +38,7 @@ import java.util.concurrent.locks.ReentrantLock;
  * </ol>
  * When the above assumptions are met, {@link WriterReaderPhaser} guarantees that the inactive data structures are not
  * being modified by any writers while being read while under readerLock() protection after a flipPhase()
- * operation.</li>
+ * operation.
  *
  *
  *
@@ -132,8 +131,10 @@ public class WriterReaderPhaser {
      * {@link WriterReaderPhaser#writerCriticalSectionEnter()} and
      * {@link WriterReaderPhaser#writerCriticalSectionExit(long)}. It may spin-wait for for active
      * writer critical section code to complete.
+     *
+     * @param yieldTimeNsec The amount of time (in nanoseconds) to sleep in each yield if yield loop is needed.
      */
-    public void flipPhase() {
+    public void flipPhase(long yieldTimeNsec) {
         if (!readerLock.isHeldByCurrentThread()) {
             throw new IllegalStateException("flipPhase() can only be called while holding the readerLock()");
         }
@@ -159,6 +160,37 @@ public class WriterReaderPhaser {
             } else {
                 caughtUp = (evenEndEpoch == startValueAtFlip);
             }
+            if (!caughtUp) {
+                if (yieldTimeNsec == 0) {
+                    Thread.yield();
+                } else {
+                    try {
+                        TimeUnit.NANOSECONDS.sleep(yieldTimeNsec);
+                    } catch (InterruptedException ex) {
+                    }
+                }
+            }
         } while (!caughtUp);
+    }
+
+
+    /**
+     * Flip a phase in the {@link WriterReaderPhaser} instance, {@link WriterReaderPhaser#flipPhase()}
+     * can only be called while holding the readerLock().
+     * {@link WriterReaderPhaser#flipPhase()} will return only after all writer critical sections (protected by
+     * {@link WriterReaderPhaser#writerCriticalSectionEnter()} ()} and
+     * {@link WriterReaderPhaser#writerCriticalSectionExit(long)} ()}) that may have been in flight when the
+     * {@link WriterReaderPhaser#flipPhase()} call were made had completed.
+     * <p>
+     * No actual writer critical section activity is required for {@link WriterReaderPhaser#flipPhase()} to
+     * succeed.
+     * <p>
+     * However, {@link WriterReaderPhaser#flipPhase()} is lock-free with respect to calls to
+     * {@link WriterReaderPhaser#writerCriticalSectionEnter()} and
+     * {@link WriterReaderPhaser#writerCriticalSectionExit(long)}. It may spin-wait for for active
+     * writer critical section code to complete.
+     */
+    public void flipPhase() {
+        flipPhase(0);
     }
 }
