@@ -7,6 +7,7 @@ package org.LatencyUtils;
 
 import org.HdrHistogram.Histogram;
 import org.HdrHistogram.AtomicHistogram;
+import org.HdrHistogram.WriterReaderPhaser;
 
 import java.lang.ref.WeakReference;
 
