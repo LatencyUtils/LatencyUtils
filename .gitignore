@@ -8,3 +8,4 @@ LatencyUtils.iml
 .settings
 release.properties
 pom.xml.releaseBackup
+LatencyUtils.jar
