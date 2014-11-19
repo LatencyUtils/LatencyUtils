@@ -10,7 +10,7 @@
 
     <groupId>org.latencyutils</groupId>
     <artifactId>LatencyUtils</artifactId>
-    <version>1.1.2-SNAPSHOT</version>
+    <version>1.1.1-SNAPSHOT</version>
 
     <name>LatencyUtils</name>
 
@@ -43,8 +43,7 @@
         <url>scm:git:git://github.com/LatencyUtils/LatencyUtils.git</url>
         <connection>scm:git:git://github.com/LatencyUtils/LatencyUtils.git</connection>
         <developerConnection>scm:git:git@github.com:LatencyUtils/LatencyUtils.git</developerConnection>
-      <tag>HEAD</tag>
-  </scm>
+    </scm>
 
     <issueManagement>
         <url>https://github.com/LatencyUtils/LatencyUtils/issues</url>
