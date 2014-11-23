@@ -55,17 +55,13 @@ public class LatencyStatsDemo {
         // parameters to match latencyStats settings..
 
         Histogram intervalHistogram = latencyStats.getIntervalHistogram();
-        Histogram accumulatedHistogram = latencyStats.getAccumulatedHistogram();
+        Histogram accumulatedHistogram = new Histogram(intervalHistogram);
 
         @Override
         public void run() {
-            // Force an interval sample. Without this, the histograms we get would be the same
-            // as before...
-            latencyStats.forceIntervalSample();
-
             // Get the histograms (without allocating new ones):
             latencyStats.getIntervalHistogramInto(intervalHistogram);
-            latencyStats.getAccumulatedHistogramInto(accumulatedHistogram);
+            accumulatedHistogram.add(intervalHistogram);
 
             // Report:
             System.out.println("\n\n--------------\n# Current Time: " + new Date());

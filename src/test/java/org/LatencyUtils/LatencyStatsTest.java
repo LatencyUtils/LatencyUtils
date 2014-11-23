@@ -41,6 +41,8 @@ public class LatencyStatsTest {
 
         LatencyStats latencyStats = new LatencyStats();
 
+        Histogram accumulatedHistogram = new Histogram(latencyStats.getIntervalHistogram());
+
         try {
             Thread.sleep(100);
 
@@ -76,14 +78,13 @@ public class LatencyStatsTest {
 
             // @ 10 sec from start
             System.out.println("\nForcing Interval Update:\n");
-            latencyStats.forceIntervalSample();
+            Histogram intervalHistogram = latencyStats.getIntervalHistogram();
+            accumulatedHistogram.add(intervalHistogram);
 
             System.out.println("@ " + (TimeServices.nanoTime() - startTime) + " nsec after start:");
             System.out.println("Estimated interval = " +
                     latencyStats.getIntervalEstimator().getEstimatedInterval(lastTime));
 
-            Histogram accumulatedHistogram = latencyStats.getAccumulatedHistogram();
-            Histogram intervalHistogram = latencyStats.getIntervalHistogram();
 
             System.out.println("Accumulated Average latency for 5msec sleeps: " +
                     accumulatedHistogram.getMean() + ", count = " + accumulatedHistogram.getTotalCount());
@@ -98,13 +99,11 @@ public class LatencyStatsTest {
 
             // @ 15 sec from start
 
-            // Report without forcing interval measurement update:
+            // Report without doing an interval measurement update:
 
             System.out.println("@ " + (TimeServices.nanoTime() - startTime) + " nsec after start:");
             System.out.println("Estimated interval = " +
                     latencyStats.getIntervalEstimator().getEstimatedInterval(TimeServices.nanoTime()));
-            accumulatedHistogram = latencyStats.getAccumulatedHistogram();
-            intervalHistogram = latencyStats.getIntervalHistogram();
 
             System.out.println("Post-pause, pre-observation Accumulated Average latency for 5msec sleeps: " +
                     accumulatedHistogram.getMean() + ", count = " + accumulatedHistogram.getTotalCount());
@@ -115,13 +114,12 @@ public class LatencyStatsTest {
 
             // Still @ 15 sec from start
             System.out.println("\nForcing Interval Update:\n");
-            latencyStats.forceIntervalSample();
 
             System.out.println("@ " + (TimeServices.nanoTime() - startTime) + " nsec after start:");
             System.out.println("Estimated interval = " +
                     latencyStats.getIntervalEstimator().getEstimatedInterval(TimeServices.nanoTime()));
-            accumulatedHistogram = latencyStats.getAccumulatedHistogram();
             intervalHistogram = latencyStats.getIntervalHistogram();
+            accumulatedHistogram.add(intervalHistogram);
 
             System.out.println("Post-pause, post-observation Accumulated Average latency for 5msec sleeps: " +
                     accumulatedHistogram.getMean() + ", count = " + accumulatedHistogram.getTotalCount());
@@ -136,13 +134,12 @@ public class LatencyStatsTest {
 
             // @ 15.5 sec from start
             System.out.println("\nForcing Interval Update:\n");
-            latencyStats.forceIntervalSample();
 
             System.out.println("@ " + (TimeServices.nanoTime() - startTime) + " nsec after start:");
             System.out.println("Estimated interval = " +
                     latencyStats.getIntervalEstimator().getEstimatedInterval(TimeServices.nanoTime()));
-            accumulatedHistogram = latencyStats.getAccumulatedHistogram();
             intervalHistogram = latencyStats.getIntervalHistogram();
+            accumulatedHistogram.add(intervalHistogram);
 
             System.out.println("Post-pause Accumulated Average latency for 5msec sleeps: " +
                     accumulatedHistogram.getMean() + ", count = " + accumulatedHistogram.getTotalCount());
@@ -157,13 +154,12 @@ public class LatencyStatsTest {
 
             // @ 16 sec from start
             System.out.println("\nForcing Interval Update:\n");
-            latencyStats.forceIntervalSample();
 
             System.out.println("@ " + (TimeServices.nanoTime() - startTime) + " nsec after start:");
             System.out.println("Estimated interval = " +
                     latencyStats.getIntervalEstimator().getEstimatedInterval(TimeServices.nanoTime()));
-            accumulatedHistogram = latencyStats.getAccumulatedHistogram();
             intervalHistogram = latencyStats.getIntervalHistogram();
+            accumulatedHistogram.add(intervalHistogram);
 
             System.out.println("Post-pause Accumulated Average latency for 5msec sleeps: " +
                     accumulatedHistogram.getMean() + ", count = " + accumulatedHistogram.getTotalCount());
@@ -178,13 +174,12 @@ public class LatencyStatsTest {
 
             // @ 18 sec from start
             System.out.println("\nForcing Interval Update:\n");
-            latencyStats.forceIntervalSample();
 
             System.out.println("@ " + (TimeServices.nanoTime() - startTime) + " nsec after start:");
             System.out.println("Estimated interval = " +
                     latencyStats.getIntervalEstimator().getEstimatedInterval(TimeServices.nanoTime()));
-            accumulatedHistogram = latencyStats.getAccumulatedHistogram();
             intervalHistogram = latencyStats.getIntervalHistogram();
+            accumulatedHistogram.add(intervalHistogram);
 
             System.out.println("Post-pause Accumulated Average latency for 5msec sleeps: " +
                     accumulatedHistogram.getMean() + ", count = " + accumulatedHistogram.getTotalCount());
@@ -207,14 +202,12 @@ public class LatencyStatsTest {
 
             // @ 19 sec from start
             System.out.println("\nForcing Interval Update:\n");
-            latencyStats.forceIntervalSample();
-
 
             System.out.println("@ " + (TimeServices.nanoTime() - startTime) + " nsec after start:");
             System.out.println("Estimated interval = " +
                     latencyStats.getIntervalEstimator().getEstimatedInterval(TimeServices.nanoTime()));
-            accumulatedHistogram = latencyStats.getAccumulatedHistogram();
             intervalHistogram = latencyStats.getIntervalHistogram();
+            accumulatedHistogram.add(intervalHistogram);
             System.out.println("Post-pause Accumulated Average latency for 5msec sleeps: " +
                     accumulatedHistogram.getMean() + ", count = " + accumulatedHistogram.getTotalCount());
             System.out.println("Post-pause Interval Average latency for 5msec sleeps: " +
@@ -227,13 +220,12 @@ public class LatencyStatsTest {
 
             // @ 19.5 sec from start
             System.out.println("\nForcing Interval Update:\n");
-            latencyStats.forceIntervalSample();
 
             System.out.println("@ " + (TimeServices.nanoTime() - startTime) + " nsec after start:");
             System.out.println("Estimated interval = " +
                     latencyStats.getIntervalEstimator().getEstimatedInterval(TimeServices.nanoTime()));
-            accumulatedHistogram = latencyStats.getAccumulatedHistogram();
             intervalHistogram = latencyStats.getIntervalHistogram();
+            accumulatedHistogram.add(intervalHistogram);
             System.out.println("Post-pause Accumulated Average latency for 5msec sleeps: " +
                     accumulatedHistogram.getMean() + ", count = " + accumulatedHistogram.getTotalCount());
             System.out.println("Post-pause Interval Average latency for 5msec sleeps: " +
@@ -290,7 +282,7 @@ public class LatencyStatsTest {
                     @Override
                     public void run() {
                         System.out.println("\nForcing Interval Update; may hang forever:\n");
-                        latencyStats.forceIntervalSample();
+                        latencyStats.getIntervalHistogram();
                         System.out.println("\nCompleted forcing interval sample\n");
                     }
                 },

@@ -76,10 +76,6 @@ public class LatencyLoggingDemo {
 
         @Override
         public void run() {
-            // Force an interval sample. Without this, the histograms we get would be the same
-            // as before...
-            latencyStats.forceIntervalSample();
-
             // Get the histogram (without allocating a new one each time):
             latencyStats.getIntervalHistogramInto(intervalHistogram);
 
@@ -123,7 +119,7 @@ public class LatencyLoggingDemo {
 
         reportingStartTime = System.currentTimeMillis();
         // Force an interval sample right at the reporting start time (to start samples here):
-        latencyStats.forceIntervalSample();
+        latencyStats.getIntervalHistogram();
 
         histogramLogWriter.outputStartTime(reportingStartTime);
         histogramLogWriter.outputLegend();

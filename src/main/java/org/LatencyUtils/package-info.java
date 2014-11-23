@@ -27,8 +27,6 @@
  * ...
  *
  * // Later, report on stats collected:
- * myOpStats..forceIntervalSample();
- *
  * Histogram intervalHistogram = myOpStats.getIntervalHistogram();
  *
  * intervalHistogram.getHistogramData().outputPercentileDistribution(System.out, 1000000.0);
@@ -54,11 +52,12 @@
  * </ul>
  * <p>
  * <h3>The Solution</h3>
- * The {@link org.LatencyUtils.LatencyStats} class is designed for simple, drop-in use as a latency behavior recording object
- * in common in-process latency recording and tracking situations. LatencyStats includes under-the-hood tracking
- * and correction of pause effects, compensating for coordinated omission. It does so by using pluggable
- * pause detectors and interval estimators that together with {@link org.LatencyUtils.LatencyStats} will transparently produce
- * corrected histogram values for the recorded latency behavior.
+ * The {@link org.LatencyUtils.LatencyStats} class is designed for simple, drop-in use as a latency behavior
+ * recording object in common in-process latency recording and tracking situations. LatencyStats includes
+ * under-the-hood tracking and correction of pause effects, compensating for coordinated omission. It does
+ * so by using pluggable pause detectors and interval estimators that together with
+ * {@link org.LatencyUtils.LatencyStats} will transparently produce corrected histogram values for the
+ * recorded latency behavior.
  *
  */
 

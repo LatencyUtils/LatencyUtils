@@ -19,17 +19,15 @@ import java.lang.ref.WeakReference;
  * examined in detail using interval and accumulated HdrHistogram histograms
  * (see {@link org.HdrHistogram.Histogram}).
  * <p>
- * LatencyStats instances maintain internal histogram data that track all recoded latencies. All
- * histogram access forms return histogram data accumulated to the last {@link #forceIntervalSample}
- * call. As such, histograms data returned by the various get...() histogram access forms is always
- * stable and self-consistent (i.e. contents represent an atomic "instant in time", and do not appear
- * to change either during or after they are read).
+ * LatencyStats instances maintain internal histogram data that track all recoded latencies. Interval
+ * histogram data can be sampled with the {@link #getIntervalHistogram},
+ * {@link #getIntervalHistogramInto}, or {@link #addIntervalHistogramTo} calls.
  * <p>
  * Recorded latencies are auto-corrected for experienced pauses by leveraging pause detectors and
- * moving window average interval estimators, compensating for coordinated omission. While most
- * histogram access forms get...() and add...() operate with corrected data, LatencyStats
- * instances also keep track of the raw, uncorrected records, which can be accessed via the
- * getUncorrected...() histogram access forms.
+ * moving window average interval estimators, compensating for coordinated omission. While typical
+ * histogram use deals with corrected data, LatencyStats instances do keep track of the raw,
+ * uncorrected records, which can be accessed via the {@link #getLatestUncorrectedIntervalHistogram}
+ * and {@link #getLatestUncorrectedIntervalHistogramInto} calls.
  * <p>
  * LatencyStats objects can be instantiated either directly via the provided constructors, or by
  * using the fluent API builder supported by {@link org.LatencyUtils.LatencyStats.Builder}.
@@ -79,14 +77,11 @@ public class LatencyStats {
     private final long highestTrackableLatency;
     private final int numberOfSignificantValueDigits;
 
-    private volatile AtomicHistogram currentRecordingHistogram;
-    private Histogram currentPauseCorrectionsHistogram;
+    private volatile AtomicHistogram activeRecordingHistogram;
+    private Histogram activePauseCorrectionsHistogram;
 
-    private AtomicHistogram intervalRawDataHistogram;
-    private Histogram intervalPauseCorrectionsHistogram;
-
-    private Histogram uncorrectedAccumulatedHistogram;
-    private Histogram accumulatedHistogram;
+    private AtomicHistogram inactiveRawDataHistogram;
+    private Histogram inactivePauseCorrectionsHistogram;
 
     private final WriterReaderPhaser recordingPhaser = new WriterReaderPhaser();
 
@@ -175,16 +170,12 @@ public class LatencyStats {
         this.numberOfSignificantValueDigits = numberOfSignificantValueDigits;
 
         // Create alternating recording histograms:
-        currentRecordingHistogram = new AtomicHistogram(lowestTrackableLatency, highestTrackableLatency, numberOfSignificantValueDigits);
-        intervalRawDataHistogram = new AtomicHistogram(lowestTrackableLatency, highestTrackableLatency, numberOfSignificantValueDigits);
+        activeRecordingHistogram = new AtomicHistogram(lowestTrackableLatency, highestTrackableLatency, numberOfSignificantValueDigits);
+        inactiveRawDataHistogram = new AtomicHistogram(lowestTrackableLatency, highestTrackableLatency, numberOfSignificantValueDigits);
 
         // Create alternating pause correction histograms:
-        currentPauseCorrectionsHistogram = new Histogram(lowestTrackableLatency, highestTrackableLatency, numberOfSignificantValueDigits);
-        intervalPauseCorrectionsHistogram = new Histogram(lowestTrackableLatency, highestTrackableLatency, numberOfSignificantValueDigits);
-
-        // Create accumulated Histograms:
-        accumulatedHistogram = new Histogram(lowestTrackableLatency, highestTrackableLatency, numberOfSignificantValueDigits);
-        uncorrectedAccumulatedHistogram = new Histogram(lowestTrackableLatency, highestTrackableLatency, numberOfSignificantValueDigits);
+        activePauseCorrectionsHistogram = new Histogram(lowestTrackableLatency, highestTrackableLatency, numberOfSignificantValueDigits);
+        inactivePauseCorrectionsHistogram = new Histogram(lowestTrackableLatency, highestTrackableLatency, numberOfSignificantValueDigits);
 
         // Create interval estimator:
         intervalEstimator = new TimeCappedMovingAverageIntervalEstimator(intervalEstimatorWindowLength,
@@ -194,8 +185,8 @@ public class LatencyStats {
         pauseTracker = new PauseTracker(this.pauseDetector, this);
 
         long now = System.currentTimeMillis();
-        currentRecordingHistogram.setStartTimeStamp(now);
-        currentPauseCorrectionsHistogram.setStartTimeStamp(now);
+        activeRecordingHistogram.setStartTimeStamp(now);
+        activePauseCorrectionsHistogram.setStartTimeStamp(now);
     }
 
     /**
@@ -207,69 +198,9 @@ public class LatencyStats {
 
         try {
             trackRecordingInterval();
-            currentRecordingHistogram.recordValue(latency);
+            activeRecordingHistogram.recordValue(latency);
         } finally {
             recordingPhaser.writerCriticalSectionExit(criticalValueAtEnter);
-        }
-    }
-
-
-    // Accumulated Histogram access:
-
-    /**
-     * Get a copy of the latest accumulated latency histogram (the one sampled at the last
-     * call to {@link #forceIntervalSample}).
-     * @return a copy of the latest accumulated latency histogram
-     */
-    public synchronized Histogram getAccumulatedHistogram() {
-        try {
-            recordingPhaser.readerLock();
-            return accumulatedHistogram.copy();
-        } finally {
-            recordingPhaser.readerUnlock();
-        }
-    }
-
-    /**
-     * Place a copy of the values of the latest accumulated latency histogram (the one sampled at the last
-     * call to {@link #forceIntervalSample}) into the given histogram
-     * @param targetHistogram the histogram into which the accumulated histogram's data should be copied
-     */
-    public synchronized void getAccumulatedHistogramInto(Histogram targetHistogram) {
-        try {
-            recordingPhaser.readerLock();
-            accumulatedHistogram.copyInto(targetHistogram);
-        } finally {
-            recordingPhaser.readerUnlock();
-        }
-    }
-
-    /**
-     * Add the values of the latest accumulated latency histogram (the one sampled at the last
-     * call to {@link #forceIntervalSample}) into the given histogram
-     * @param toHistogram the histogram into which the accumulated histogram's data should be added
-     */
-    public synchronized void addAccumulatedHistogramTo(Histogram toHistogram) {
-        try {
-            recordingPhaser.readerLock();
-            toHistogram.add(accumulatedHistogram);
-        } finally {
-            recordingPhaser.readerUnlock();
-        }
-    }
-
-    /**
-     * Get a copy of the uncorrected accumulated latency histogram (the one sampled at the last
-     * call to {@link #forceIntervalSample}). Values will not include corrections
-     * for detected pauses.
-     * @return a copy of the latest uncorrected accumulated latency histogram
-     */
-    public synchronized Histogram getUncorrectedAccumulatedHistogram() {
-        try {
-            recordingPhaser.readerLock();
-            return uncorrectedAccumulatedHistogram.copy();
-        } finally {
-            recordingPhaser.readerUnlock();
         }
     }
 
@@ -277,62 +208,74 @@ public class LatencyStats {
     // Interval Histogram access:
 
     /**
-     * Get a copy of the latest interval latency histogram (the one sampled at the last
-     * call to {@link #forceIntervalSample}):
+     * Get a new interval histogram which will include the value counts accumulated since the last
+     * interval histogram was taken.
+     * <p>
+     * Calling {@link #getIntervalHistogram}() will reset
+     * the interval value counts, and start accumulating value counts for the next interval.
+     *
      * @return a copy of the latest interval latency histogram
      */
     public synchronized Histogram getIntervalHistogram() {
-        try {
-            recordingPhaser.readerLock();
-            Histogram intervalHistogram = new Histogram(lowestTrackableLatency, highestTrackableLatency, numberOfSignificantValueDigits);
-            getIntervalHistogramInto(intervalHistogram);
-            return intervalHistogram;
-        } finally {
-            recordingPhaser.readerUnlock();
-        }
+        Histogram intervalHistogram =
+                new Histogram(lowestTrackableLatency, highestTrackableLatency, numberOfSignificantValueDigits);
+        getIntervalHistogramInto(intervalHistogram);
+        return intervalHistogram;
     }
 
     /**
-     * Place a copy of the  values of the latest interval latency histogram (the one sampled at the last
-     * call to {@link #forceIntervalSample}) into the given histogram
+     * Place a copy of the value counts accumulated since the last interval histogram
+     * was taken into {@code targetHistogram}.
+     *
+     * Calling {@link #getIntervalHistogramInto}() will reset
+     * the interval value counts, and start accumulating value counts for the next interval.
+     *
      * @param targetHistogram the histogram into which the interval histogram's data should be copied
      */
     public synchronized void getIntervalHistogramInto(Histogram targetHistogram) {
         try {
             recordingPhaser.readerLock();
-            intervalRawDataHistogram.copyInto(targetHistogram);
-            targetHistogram.add(intervalPauseCorrectionsHistogram);
+            updateHistograms();
+            inactiveRawDataHistogram.copyInto(targetHistogram);
+            targetHistogram.add(inactivePauseCorrectionsHistogram);
         } finally {
             recordingPhaser.readerUnlock();
         }
     }
 
     /**
-     * Add the values of the latest interval latency histogram (the one sampled at the last
-     * call to {@link #forceIntervalSample}) into the given histogram
+     * Add the values value counts accumulated since the last interval histogram was taken
+     * into {@code toHistogram}.
+     *
+     * Calling {@link #getIntervalHistogramInto}() will reset
+     * the interval value counts, and start accumulating value counts for the next interval.
+     *
      * @param toHistogram the histogram into which the interval histogram's data should be added
      */
     public synchronized void addIntervalHistogramTo(Histogram toHistogram) {
         try {
             recordingPhaser.readerLock();
-            toHistogram.add(intervalRawDataHistogram);
-            toHistogram.add(intervalPauseCorrectionsHistogram);
+            updateHistograms();
+            toHistogram.add(inactiveRawDataHistogram);
+            toHistogram.add(inactivePauseCorrectionsHistogram);
         } finally {
             recordingPhaser.readerUnlock();
         }
     }
 
     /**
-     * Get a copy of the uncorrected latest interval latency histogram (the one sampled at the last
-     * call to {@link #forceIntervalSample}). Values will not include corrections
-     * for detected pauses.
+     * Get a copy of the uncorrected latest interval latency histogram. Values will not include
+     * corrections for detected pauses. The interval histogram copies will include all values points
+     * captured  up to the latest call to call to one of {@link #getIntervalHistogram},
+     * {@link #getIntervalHistogramInto}, or {@link #addIntervalHistogramTo}.
+     *
      * @return a copy of the latest uncorrected interval latency histogram
      */
-    public synchronized Histogram getUncorrectedIntervalHistogram() {
+    public synchronized Histogram getLatestUncorrectedIntervalHistogram() {
         try {
             recordingPhaser.readerLock();
             Histogram intervalHistogram = new Histogram(lowestTrackableLatency, highestTrackableLatency, numberOfSignificantValueDigits);
-            getUncorrectedIntervalHistogramInto(intervalHistogram);
+            getLatestUncorrectedIntervalHistogramInto(intervalHistogram);
             return intervalHistogram;
         } finally {
             recordingPhaser.readerUnlock();
@@ -340,40 +283,17 @@ public class LatencyStats {
     }
 
     /**
-     * Place a copy of the  values of the latest uncorrected interval latency histogram (the one
-     * sampled at the last call to {@link #forceIntervalSample}) into the given histogram
+     * Place a copy of the  values of the latest uncorrected interval latency histogram. Values will not include
+     * corrections for detected pauses. The interval histogram copies will include all values points
+     * captured  up to the latest call to call to one of {@link #getIntervalHistogram},
+     * {@link #getIntervalHistogramInto}, or {@link #addIntervalHistogramTo}.
+     *
      * @param targetHistogram the histogram into which the interval histogram's data should be copied
      */
-    public synchronized void getUncorrectedIntervalHistogramInto(Histogram targetHistogram) {
+    public synchronized void getLatestUncorrectedIntervalHistogramInto(Histogram targetHistogram) {
         try {
             recordingPhaser.readerLock();
-            intervalRawDataHistogram.copyInto(targetHistogram);
-        } finally {
-            recordingPhaser.readerUnlock();
-        }
-    }
-
-
-    /**
-     * Force an update of the interval and accumulated histograms data from the current recorded data.
-     * Note that the interval and accumulated histograms observed with the various get...() calls are
-     * ONLY updated when {@link #forceIntervalSample} is called.
-     */
-    public synchronized void forceIntervalSample() {
-        updateHistograms();
-    }
-
-    /**
-     * Reset the contents of the accumulated histogram
-     */
-    public synchronized void resetAccumulatedHistogram() {
-        try {
-            recordingPhaser.readerLock();
-            long now = System.currentTimeMillis();
-            accumulatedHistogram.reset();
-            accumulatedHistogram.setStartTimeStamp(now);
-            uncorrectedAccumulatedHistogram.reset();
-            uncorrectedAccumulatedHistogram.setStartTimeStamp(now);
+            inactiveRawDataHistogram.copyInto(targetHistogram);
         } finally {
             recordingPhaser.readerUnlock();
         }
@@ -482,7 +402,7 @@ public class LatencyStats {
             long estimatedInterval = intervalEstimator.getEstimatedInterval(pauseEndTime);
             long observedLatencyMinbar = pauseLength - estimatedInterval;
             if (observedLatencyMinbar >= estimatedInterval) {
-                currentPauseCorrectionsHistogram.recordValueWithExpectedInterval(
+                activePauseCorrectionsHistogram.recordValueWithExpectedInterval(
                         observedLatencyMinbar,
                         estimatedInterval
                 );
@@ -498,15 +418,15 @@ public class LatencyStats {
     }
 
     private void swapRecordingHistograms() {
-        final AtomicHistogram tempHistogram = intervalRawDataHistogram;
-        intervalRawDataHistogram = currentRecordingHistogram;
-        currentRecordingHistogram = tempHistogram;
+        final AtomicHistogram tempHistogram = inactiveRawDataHistogram;
+        inactiveRawDataHistogram = activeRecordingHistogram;
+        activeRecordingHistogram = tempHistogram;
     }
 
     private void swapPauseCorrectionHistograms() {
-        final Histogram tempHistogram = intervalPauseCorrectionsHistogram;
-        intervalPauseCorrectionsHistogram = currentPauseCorrectionsHistogram;
-        currentPauseCorrectionsHistogram = tempHistogram;
+        final Histogram tempHistogram = inactivePauseCorrectionsHistogram;
+        inactivePauseCorrectionsHistogram = activePauseCorrectionsHistogram;
+        activePauseCorrectionsHistogram = tempHistogram;
     }
 
     private synchronized void swapHistograms() {
@@ -517,27 +437,20 @@ public class LatencyStats {
     private synchronized void updateHistograms() {
         try {
             recordingPhaser.readerLock();
-            intervalRawDataHistogram.reset();
-            intervalPauseCorrectionsHistogram.reset();
+            inactiveRawDataHistogram.reset();
+            inactivePauseCorrectionsHistogram.reset();
 
             swapHistograms();
             long now = System.currentTimeMillis();
-            currentRecordingHistogram.setStartTimeStamp(now);
-            currentPauseCorrectionsHistogram.setStartTimeStamp(now);
-            intervalRawDataHistogram.setEndTimeStamp(now);
-            intervalPauseCorrectionsHistogram.setEndTimeStamp(now);
+            activeRecordingHistogram.setStartTimeStamp(now);
+            activePauseCorrectionsHistogram.setStartTimeStamp(now);
+            inactiveRawDataHistogram.setEndTimeStamp(now);
+            inactivePauseCorrectionsHistogram.setEndTimeStamp(now);
 
             // Make sure we are not in the middle of recording a value on the previously current recording histogram:
 
             // Flip phase on epochs to make sure no in-flight recordings are active on pre-flip phase:
             recordingPhaser.flipPhase();
-
-            uncorrectedAccumulatedHistogram.add(intervalRawDataHistogram);
-            uncorrectedAccumulatedHistogram.setEndTimeStamp(now);
-
-            accumulatedHistogram.add(intervalRawDataHistogram);
-            accumulatedHistogram.add(intervalPauseCorrectionsHistogram);
-            accumulatedHistogram.setEndTimeStamp(now);
         } finally {
             recordingPhaser.readerUnlock();
         }

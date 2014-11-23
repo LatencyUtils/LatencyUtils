@@ -79,17 +79,14 @@ public class LatencyComparativeLoggingDemo {
         // parameters to match latencyStats settings..
 
         Histogram intervalHistogram = latencyStats.getIntervalHistogram();
-        Histogram uncorrectedIntervalHistogram = latencyStats.getUncorrectedIntervalHistogram();
+        Histogram uncorrectedIntervalHistogram = latencyStats.getLatestUncorrectedIntervalHistogram();
 
         @Override
         public void run() {
-            // Force an interval sample. Without this, the histograms we get would be the same
-            // as before...
-            latencyStats.forceIntervalSample();
-
             // Get the histogram (without allocating a new one each time):
             latencyStats.getIntervalHistogramInto(intervalHistogram);
-            latencyStats.getUncorrectedIntervalHistogramInto(uncorrectedIntervalHistogram);
+            // Get the uncorrected interval histogram for the latest sampled interval:
+            latencyStats.getLatestUncorrectedIntervalHistogramInto(uncorrectedIntervalHistogram);
 
             // Adjust start and end timestamps so they show offset from reportingStartTime
             // (by convention, they are set to indicate milliseconds form the epoch)
@@ -139,7 +136,7 @@ public class LatencyComparativeLoggingDemo {
 
         reportingStartTime = System.currentTimeMillis();
         // Force an interval sample right at the reporting start time (to start samples here):
-        latencyStats.forceIntervalSample();
+        latencyStats.getIntervalHistogram();
 
         histogramLogWriter.outputStartTime(reportingStartTime);
         histogramLogWriter.outputLegend();
