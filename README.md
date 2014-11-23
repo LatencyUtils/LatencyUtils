@@ -18,11 +18,11 @@ track recorded latencies in the common use case the often follow this pattern:
  // Perform operation:
  doMyOperation(...);
  // Record operation latency:
- myOpStats(System.nanoTime() - startTime);
+ myOpStats.recordLatency(System.nanoTime() - startTime);
  ...
 
  // Later, report on stats collected:
- myOpStats..forceIntervalSample();
+ myOpStats.forceIntervalSample();
 
  Histogram intervalHistogram = myOpStats.getIntervalHistogram();
 
