@@ -22,8 +22,6 @@ track recorded latencies in the common use case the often follow this pattern:
  ...
 
  // Later, report on stats collected:
- myOpStats.forceIntervalSample();
-
  Histogram intervalHistogram = myOpStats.getIntervalHistogram();
 
  intervalHistogram.getHistogramData().outputPercentileDistribution(System.out, 1000000.0);
