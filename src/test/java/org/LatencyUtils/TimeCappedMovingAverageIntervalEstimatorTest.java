@@ -8,7 +8,6 @@ package org.LatencyUtils;
 import org.junit.Assert;
 import org.junit.Test;
 
-import java.lang.ref.WeakReference;
 import java.util.concurrent.TimeUnit;
 
 

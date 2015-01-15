@@ -26,7 +26,7 @@ public class SimplePauseDetector extends PauseDetector {
     private final long pauseNotificationThreshold;
     final AtomicLong consensusLatestTime = new AtomicLong();
 
-    private volatile long stallTheadMask = 0;
+    private volatile long stallThreadMask = 0;
     private volatile long stopThreadMask = 0;
 
     private final SimplePauseDetectorThread detectors[];
@@ -117,7 +117,7 @@ public class SimplePauseDetector extends PauseDetector {
                 }
 
                 // This is ***TEST FUNCTIONALITY***: Spin as long as we are externally asked to stall:
-                while ((stallTheadMask & threadMask) != 0);
+                while ((stallThreadMask & threadMask) != 0);
 
                 observedLasUpdateTime = consensusLatestTime.get();
                 // Volatile store above makes sure new "now" is measured after observedLasUpdateTime sample
@@ -167,8 +167,8 @@ public class SimplePauseDetector extends PauseDetector {
      * @throws InterruptedException if internal sleep implementation throws it
      */
     public void stallDetectorThreads(long threadNumberMask, long stallLength) throws InterruptedException {
-        long savedMask = stallTheadMask;
-        stallTheadMask = threadNumberMask;
+        long savedMask = stallThreadMask;
+        stallThreadMask = threadNumberMask;
 
         long startTime = TimeServices.nanoTime();
         long endTime = startTime + stallLength;
@@ -180,7 +180,7 @@ public class SimplePauseDetector extends PauseDetector {
             TimeUnit.NANOSECONDS.sleep(50000); // give things a chance to propagate.
         }
 
-        stallTheadMask = savedMask;
+        stallThreadMask = savedMask;
     }
 
     /**
