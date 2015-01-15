@@ -50,7 +50,7 @@
  * <li>When a pause occurs outside of the tracked operation (and outside of the tracked time window) no long
  * latency value would be recorded, even though any requested operation would be stalled by the pause.</li>
  * </ul>
- * <p>
+ * 
  * <h3>The Solution</h3>
  * The {@link org.LatencyUtils.LatencyStats} class is designed for simple, drop-in use as a latency behavior
  * recording object in common in-process latency recording and tracking situations. LatencyStats includes
