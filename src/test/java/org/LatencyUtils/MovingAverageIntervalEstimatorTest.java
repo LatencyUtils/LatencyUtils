@@ -8,9 +8,6 @@ package org.LatencyUtils;
 import org.junit.Assert;
 import org.junit.Test;
 
-import java.lang.ref.WeakReference;
-
-
 /**
  * JUnit test for {@link org.LatencyUtils.MovingAverageIntervalEstimatorTest}
  */

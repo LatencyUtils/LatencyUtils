@@ -152,7 +152,7 @@ public class LatencyStats {
         if (pauseDetector == null) {
             if (defaultPauseDetector == null) {
                 // There is no pause detector supplied, and no default set. Set the default to a default
-                // simple pause detector instance. [User feedback seems to be that this is preferrable to
+                // simple pause detector instance. [User feedback seems to be that this is preferable to
                 // throwing an exception and forcing people to set the default themselves...]
                 synchronized (LatencyStats.class) {
                     if (defaultPauseDetector == null) {
@@ -247,7 +247,7 @@ public class LatencyStats {
      * Add the values value counts accumulated since the last interval histogram was taken
      * into {@code toHistogram}.
      *
-     * Calling {@link #getIntervalHistogramInto}() will reset
+     * Calling {@link #addIntervalHistogramTo}() will reset
      * the interval value counts, and start accumulating value counts for the next interval.
      *
      * @param toHistogram the histogram into which the interval histogram's data should be added
