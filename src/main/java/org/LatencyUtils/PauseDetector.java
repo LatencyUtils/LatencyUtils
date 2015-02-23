@@ -22,7 +22,7 @@ public abstract class PauseDetector {
 
     private volatile boolean stop;
 
-    PauseDetector() {
+    protected PauseDetector() {
         pauseDetectorThread.setDaemon(true);
         stop = false;
         pauseDetectorThread.start();
