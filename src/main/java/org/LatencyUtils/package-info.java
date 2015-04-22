@@ -23,7 +23,7 @@
  * // Perform operation:
  * doMyOperation(...);
  * // Record operation latency:
- * myOpStats(System.nanoTime() - startTime);
+ * myOpStats.recordLatency(System.nanoTime() - startTime);
  * ...
  *
  * // Later, report on stats collected:
