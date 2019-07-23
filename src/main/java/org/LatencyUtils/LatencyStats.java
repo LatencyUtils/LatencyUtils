@@ -69,7 +69,7 @@ import java.lang.ref.WeakReference;
 public class LatencyStats {
     private static Builder defaultBuilder = new Builder();
     private static final TimeServices.ScheduledExecutor latencyStatsScheduledExecutor = new TimeServices.ScheduledExecutor();
-    private static PauseDetector defaultPauseDetector;
+    private static volatile PauseDetector defaultPauseDetector;
 
     // All times and time units are in nanoseconds
 
@@ -150,17 +150,20 @@ public class LatencyStats {
                         final PauseDetector pauseDetector) {
 
         if (pauseDetector == null) {
-            if (defaultPauseDetector == null) {
+            // Lazy Initialization: Avoid double-checked locking race by using a local variable reading from a volatile:
+            PauseDetector defDetector = defaultPauseDetector;
+            if (defDetector == null) {
                 // There is no pause detector supplied, and no default set. Set the default to a default
                 // simple pause detector instance. [User feedback seems to be that this is preferable to
                 // throwing an exception and forcing people to set the default themselves...]
                 synchronized (LatencyStats.class) {
-                    if (defaultPauseDetector == null) {
-                        defaultPauseDetector = new SimplePauseDetector();
+                    defDetector = defaultPauseDetector;
+                    if (defDetector == null) {
+                        defaultPauseDetector = defDetector = new SimplePauseDetector();
                     }
                 }
             }
-            this.pauseDetector = defaultPauseDetector;
+            this.pauseDetector = defDetector;
         } else {
             this.pauseDetector = pauseDetector;
         }
